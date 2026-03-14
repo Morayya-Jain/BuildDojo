@@ -249,7 +249,10 @@ function formatSqlResultSet(resultSet) {
 function RunConsole({
   code,
   detectedLanguage,
+  fileLanguage = '',
   lockedLanguage = '',
+  hasLockedLanguageMismatch = false,
+  onResolveLockedLanguageMismatch = null,
   onRunPreview,
   fillHeight = false,
 }) {
@@ -266,6 +269,7 @@ function RunConsole({
   const outputPanelRef = useRef(null)
 
   const normalizedLockedLanguage = sanitizeLanguage(lockedLanguage)
+  const normalizedFileLanguage = sanitizeLanguage(fileLanguage)
   const normalizedDetectedLanguage = sanitizeLanguage(detectedLanguage)
   const resolvedLanguage = resolveRuntimeLanguage({
     detectedLanguage: normalizedDetectedLanguage || detectedLanguage,
@@ -282,6 +286,9 @@ function RunConsole({
   const isConsoleRunnable = canRunInConsole(resolvedLanguage)
   const canTriggerPreview = isHtml && typeof onRunPreview === 'function'
   const isLanguageSelectorLocked = Boolean(normalizedLockedLanguage)
+  const showLockedLanguageMismatchNotice = Boolean(
+    normalizedLockedLanguage && hasLockedLanguageMismatch,
+  )
 
   const languageChoices = useMemo(() => {
     if (
@@ -789,6 +796,24 @@ function RunConsole({
           </button>
         ) : null}
       </div>
+
+      {showLockedLanguageMismatchNotice ? (
+        <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p>
+            This task is locked to{' '}
+            <strong>{prettyLanguageName(normalizedLockedLanguage)}</strong>, but the active file
+            appears to be <strong>{prettyLanguageName(normalizedFileLanguage || 'n/a')}</strong>.
+          </p>
+          <button
+            type="button"
+            className={`${buttonSecondary} ${sizeSm} w-fit border-amber-400 bg-white text-amber-900 hover:border-amber-500 hover:bg-amber-100`}
+            onClick={() => onResolveLockedLanguageMismatch?.()}
+            disabled={isRunning || typeof onResolveLockedLanguageMismatch !== 'function'}
+          >
+            Switch/Create {prettyLanguageName(normalizedLockedLanguage)} file
+          </button>
+        </div>
+      ) : null}
 
       {isConsoleRunnable ? (
         <div

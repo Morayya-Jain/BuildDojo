@@ -20,6 +20,9 @@
     "sql.js": "^1.14.1",
     "typescript": "^5.9.3"
   },
+  "overrides": {
+    "dompurify": "3.3.3"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@tailwindcss/postcss": "^4.2.1",

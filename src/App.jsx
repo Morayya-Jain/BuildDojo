@@ -50,6 +50,7 @@ import {
   profileToPromptContext,
 } from './lib/profile'
 import {
+  ZIP_IMPORT_LIMITS,
   buildPreviewSrcDoc,
   createStarterFileForLanguage,
   createDefaultProjectFiles,
@@ -61,6 +62,7 @@ import {
   runtimeLanguageFromPath,
   sanitizeFilePath,
   toPersistedFiles,
+  validateZipImportFileDescriptors,
 } from './lib/projectFiles'
 import {
   buildProjectTitleFallback,
@@ -100,6 +102,19 @@ function normalizeTask(task) {
     completed: Boolean(task.completed),
     task_index: typeof task.task_index === 'number' ? task.task_index : 0,
   }
+}
+
+function getUtf8ByteLength(value) {
+  const text = toText(value)
+  if (!text) {
+    return 0
+  }
+
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(text).length
+  }
+
+  return text.length
 }
 
 function normalizeProjectSkillLevel(value) {
@@ -1680,6 +1695,13 @@ function App() {
           return
         }
 
+        if (file.size > ZIP_IMPORT_LIMITS.maxArchiveBytes) {
+          setFileError(
+            `Zip file is too large. Maximum size is ${Math.round(ZIP_IMPORT_LIMITS.maxArchiveBytes / (1024 * 1024))} MB.`,
+          )
+          return
+        }
+
         const { default: JSZip } = await import('jszip')
         const zip = await JSZip.loadAsync(file)
         const entries = Object.values(zip.files)
@@ -1691,10 +1713,41 @@ function App() {
           )
           .sort((a, b) => a.name.localeCompare(b.name))
 
+        const descriptorValidation = validateZipImportFileDescriptors(
+          entries.map((entry) => ({
+            path: entry.name,
+            sizeBytes: Number(entry?._data?.uncompressedSize),
+          })),
+          ZIP_IMPORT_LIMITS,
+        )
+
+        if (descriptorValidation.error) {
+          setFileError(descriptorValidation.error.message)
+          return
+        }
+
         const importedFiles = []
+        let totalImportedBytes = 0
         for (let index = 0; index < entries.length; index += 1) {
           const entry = entries[index]
           const content = await entry.async('string')
+          const fileBytes = getUtf8ByteLength(content)
+
+          if (fileBytes > ZIP_IMPORT_LIMITS.maxFileBytes) {
+            setFileError(
+              `File "${entry.name}" is too large. Maximum file size is ${Math.round(ZIP_IMPORT_LIMITS.maxFileBytes / 1024)} KB.`,
+            )
+            return
+          }
+
+          totalImportedBytes += fileBytes
+          if (totalImportedBytes > ZIP_IMPORT_LIMITS.maxTotalBytes) {
+            setFileError(
+              `Imported content is too large. Maximum total size is ${Math.round(ZIP_IMPORT_LIMITS.maxTotalBytes / (1024 * 1024))} MB.`,
+            )
+            return
+          }
+
           importedFiles.push({
             path: entry.name,
             name: fileNameFromPath(entry.name),
@@ -2092,25 +2145,47 @@ function App() {
 
     setUiError('')
     setIsMarkingTaskComplete(true)
+    const syncTasksFromDb = async () => {
+      if (!currentProjectId) {
+        return
+      }
+
+      const { data: syncedTasks, error: syncError } = await getProjectTasks(currentProjectId)
+      if (syncError || !Array.isArray(syncedTasks)) {
+        return
+      }
+
+      setTasks(syncedTasks.map(normalizeTask))
+    }
 
     try {
       if (currentTask.completed) {
-        markTaskIncomplete(currentTask.id)
-
         const { error: taskError } = await markTaskIncompleteInDb(currentTask.id)
         if (taskError) {
           console.error(taskError)
           setUiError(taskError.message || 'Could not undo task completion in database.')
+          return
         }
 
         if (currentProjectId) {
           const { error: projectError } = await markProjectIncomplete(currentProjectId)
           if (projectError) {
+            const { error: rollbackError } = await markTaskCompleteInDb(currentTask.id)
             console.error(projectError)
-            setUiError(projectError.message || 'Could not update project completion state.')
+            if (rollbackError) {
+              console.error(rollbackError)
+              await syncTasksFromDb()
+              setUiError(
+                'Could not update project completion state, and task rollback failed. Please refresh and try again.',
+              )
+            } else {
+              setUiError(projectError.message || 'Could not update project completion state.')
+            }
+            return
           }
         }
 
+        markTaskIncomplete(currentTask.id)
         return
       }
 
@@ -2154,17 +2229,17 @@ function App() {
         return
       }
 
-      const updatedTasks = tasks.map((task) =>
-        task.id === currentTask.id ? { ...task, completed: true } : task,
-      )
-
-      markTaskComplete(currentTask.id)
-
       const { error: taskError } = await markTaskCompleteInDb(currentTask.id)
       if (taskError) {
         console.error(taskError)
         setUiError(taskError.message || 'Could not update task status in database.')
+        return
       }
+
+      const updatedTasks = tasks.map((task) =>
+        task.id === currentTask.id ? { ...task, completed: true } : task,
+      )
+      markTaskComplete(currentTask.id)
 
       const nextTaskIndex = updatedTasks.findIndex((task) => !task.completed)
 
@@ -2172,8 +2247,19 @@ function App() {
         if (currentProjectId) {
           const { error: projectError } = await markProjectComplete(currentProjectId)
           if (projectError) {
+            const { error: rollbackError } = await markTaskIncompleteInDb(currentTask.id)
             console.error(projectError)
-            setUiError(projectError.message || 'Could not mark project complete.')
+            if (rollbackError) {
+              console.error(rollbackError)
+              await syncTasksFromDb()
+              setUiError(
+                'Could not mark project complete, and task rollback failed. Please refresh and try again.',
+              )
+            } else {
+              markTaskIncomplete(currentTask.id)
+              setUiError(projectError.message || 'Could not mark project complete.')
+            }
+            return
           }
         }
 
@@ -2205,6 +2291,7 @@ function App() {
     runCodeCheck,
     setCurrentTaskIndex,
     setFeedbackHistory,
+    setTasks,
     tasks,
     user,
     userCode,

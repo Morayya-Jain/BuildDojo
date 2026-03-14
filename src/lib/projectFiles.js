@@ -2,6 +2,12 @@ import { detectLanguage } from './detectLanguage.js'
 import { sanitizeLanguage } from './runtimeUtils.js'
 
 const FILE_NAME_REGEX = /^[a-zA-Z0-9._-]+$/
+const ZIP_IMPORT_LIMITS = Object.freeze({
+  maxArchiveBytes: 5 * 1024 * 1024,
+  maxFileCount: 200,
+  maxFileBytes: 512 * 1024,
+  maxTotalBytes: 5 * 1024 * 1024,
+})
 const PATH_LANGUAGE_RULES = [
   { language: 'python', extensions: ['.py'] },
   { language: 'sql', extensions: ['.sql'] },
@@ -397,6 +403,98 @@ function buildExportPackage({ projectId, projectDescription, skillLevel, tasks =
   }
 }
 
+function toPositiveInteger(value, fallback) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback
+  }
+
+  return Math.floor(parsed)
+}
+
+function formatSizeLabel(bytes) {
+  const safeBytes = Math.max(0, Number(bytes) || 0)
+  const mb = safeBytes / (1024 * 1024)
+
+  if (mb >= 1) {
+    return `${mb.toFixed(1)} MB`
+  }
+
+  return `${Math.round(safeBytes / 1024)} KB`
+}
+
+function normalizeZipImportLimits(overrides = {}) {
+  return {
+    maxArchiveBytes: toPositiveInteger(
+      overrides.maxArchiveBytes,
+      ZIP_IMPORT_LIMITS.maxArchiveBytes,
+    ),
+    maxFileCount: toPositiveInteger(overrides.maxFileCount, ZIP_IMPORT_LIMITS.maxFileCount),
+    maxFileBytes: toPositiveInteger(overrides.maxFileBytes, ZIP_IMPORT_LIMITS.maxFileBytes),
+    maxTotalBytes: toPositiveInteger(overrides.maxTotalBytes, ZIP_IMPORT_LIMITS.maxTotalBytes),
+  }
+}
+
+function validateZipImportFileDescriptors(fileDescriptors = [], overrides = {}) {
+  const limits = normalizeZipImportLimits(overrides)
+  const descriptors = Array.isArray(fileDescriptors) ? fileDescriptors : []
+
+  if (descriptors.length === 0) {
+    return {
+      data: null,
+      error: new Error('Import file has no project files.'),
+    }
+  }
+
+  if (descriptors.length > limits.maxFileCount) {
+    return {
+      data: null,
+      error: new Error(
+        `Import contains too many files (${descriptors.length}). Limit is ${limits.maxFileCount}.`,
+      ),
+    }
+  }
+
+  let estimatedTotalBytes = 0
+
+  for (const descriptor of descriptors) {
+    const path = sanitizeFilePath(descriptor?.path || descriptor?.name || '') || 'unknown file'
+    const sizeBytes = Number(descriptor?.sizeBytes)
+
+    if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
+      continue
+    }
+
+    if (sizeBytes > limits.maxFileBytes) {
+      return {
+        data: null,
+        error: new Error(
+          `File "${path}" is too large (${formatSizeLabel(sizeBytes)}). Limit per file is ${formatSizeLabel(limits.maxFileBytes)}.`,
+        ),
+      }
+    }
+
+    estimatedTotalBytes += sizeBytes
+
+    if (estimatedTotalBytes > limits.maxTotalBytes) {
+      return {
+        data: null,
+        error: new Error(
+          `Imported file content is too large (${formatSizeLabel(estimatedTotalBytes)}). Total limit is ${formatSizeLabel(limits.maxTotalBytes)}.`,
+        ),
+      }
+    }
+  }
+
+  return {
+    data: {
+      estimatedTotalBytes,
+      limits,
+    },
+    error: null,
+  }
+}
+
 function parseImportPackage(rawText) {
   try {
     const parsed = JSON.parse(rawText)
@@ -444,6 +542,7 @@ function parseImportPackage(rawText) {
 }
 
 export {
+  ZIP_IMPORT_LIMITS,
   buildExportPackage,
   buildPreviewSrcDoc,
   createStarterFileForLanguage,
@@ -458,4 +557,5 @@ export {
   runtimeLanguageFromPath,
   sanitizeFilePath,
   toPersistedFiles,
+  validateZipImportFileDescriptors,
 }

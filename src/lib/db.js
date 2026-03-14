@@ -398,6 +398,7 @@ export async function deleteProject(projectId, userId) {
       .from('project_files')
       .delete()
       .eq('project_id', projectId)
+      .eq('user_id', userId)
 
     if (filesError && !isProjectFilesTableMissing(filesError)) {
       return { data: null, error: filesError }
@@ -407,6 +408,7 @@ export async function deleteProject(projectId, userId) {
       .from('tasks')
       .delete()
       .eq('project_id', projectId)
+      .eq('user_id', userId)
 
     if (tasksError) {
       return { data: null, error: tasksError }

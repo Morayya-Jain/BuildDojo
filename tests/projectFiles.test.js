@@ -1,10 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  ZIP_IMPORT_LIMITS,
   createDefaultProjectFiles,
   createStarterFileForLanguage,
   findFirstFileByLanguage,
   runtimeLanguageFromPath,
+  validateZipImportFileDescriptors,
 } from '../src/lib/projectFiles.js'
 
 test('runtimeLanguageFromPath maps core runnable extensions', () => {
@@ -71,4 +73,53 @@ test('createStarterFileForLanguage creates unique fallback paths when needed', (
   assert.equal(starter?.path, 'main-2.py')
   assert.equal(starter?.language, 'python')
   assert.match(starter?.content || '', /Start coding here/i)
+})
+
+test('validateZipImportFileDescriptors accepts valid small descriptor sets', () => {
+  const descriptors = [
+    { path: 'src/main.js', sizeBytes: 1024 },
+    { path: 'src/utils.js', sizeBytes: 2048 },
+  ]
+
+  const result = validateZipImportFileDescriptors(descriptors, ZIP_IMPORT_LIMITS)
+  assert.equal(result.error, null)
+  assert.equal(result.data?.estimatedTotalBytes, 3072)
+})
+
+test('validateZipImportFileDescriptors rejects descriptor count above limit', () => {
+  const result = validateZipImportFileDescriptors(
+    Array.from({ length: 3 }, (_, index) => ({
+      path: `file-${index}.txt`,
+      sizeBytes: 1,
+    })),
+    { ...ZIP_IMPORT_LIMITS, maxFileCount: 2 },
+  )
+
+  assert.match(result.error?.message || '', /too many files/i)
+})
+
+test('validateZipImportFileDescriptors rejects single descriptor above per-file size limit', () => {
+  const result = validateZipImportFileDescriptors(
+    [{ path: 'huge.txt', sizeBytes: 600 * 1024 }],
+    { ...ZIP_IMPORT_LIMITS, maxFileBytes: 512 * 1024 },
+  )
+
+  assert.match(result.error?.message || '', /too large/i)
+  assert.match(result.error?.message || '', /huge\.txt/i)
+})
+
+test('validateZipImportFileDescriptors rejects cumulative descriptor size above total limit', () => {
+  const result = validateZipImportFileDescriptors(
+    [
+      { path: 'one.txt', sizeBytes: 4 * 1024 * 1024 },
+      { path: 'two.txt', sizeBytes: 3 * 1024 * 1024 },
+    ],
+    {
+      ...ZIP_IMPORT_LIMITS,
+      maxFileBytes: 10 * 1024 * 1024,
+      maxTotalBytes: 5 * 1024 * 1024,
+    },
+  )
+
+  assert.match(result.error?.message || '', /total limit/i)
 })
