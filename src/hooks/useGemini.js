@@ -34,6 +34,39 @@ function getGeminiText(data) {
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
 }
 
+function parseCodeCheckResult(text) {
+  const cleaned = cleanJsonString(text)
+  const parsed = JSON.parse(cleaned)
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Code check response is not a JSON object.')
+  }
+
+  const normalizedStatus = toText(parsed.status).trim().toUpperCase()
+  if (normalizedStatus !== 'PASS' && normalizedStatus !== 'FAIL') {
+    throw new Error('Code check response must include status PASS or FAIL.')
+  }
+
+  const feedback = toText(parsed.feedback).trim()
+  if (!feedback) {
+    throw new Error('Code check response must include non-empty feedback.')
+  }
+
+  const normalizedOutputMatch = toText(parsed.outputMatch).trim().toLowerCase()
+  if (normalizedOutputMatch !== 'true' && normalizedOutputMatch !== 'false') {
+    throw new Error('Code check response must include boolean outputMatch.')
+  }
+
+  const outputReason = toText(parsed.outputReason).trim()
+
+  return {
+    status: normalizedStatus,
+    feedback,
+    outputMatch: normalizedOutputMatch === 'true',
+    outputReason,
+  }
+}
+
 async function callGemini(prompt, options = {}) {
   const { temperature = 0.5, maxOutputTokens = 256 } = options
 
@@ -179,17 +212,63 @@ export function useGemini() {
   }, [])
 
   const checkUserCode = useCallback(async (task, userCode) => {
-    const prompt = `You are a strict, concise coding mentor.\nThe user is working on this task: ${task.description}\nThey have written this code:\n${userCode}\nGive specific targeted feedback on their attempt.\nDo NOT give them the complete solution under any circumstances.\nPoint out exactly what is wrong or missing.\nEnd with one question that nudges them to think about the next step.\nStart directly with technical feedback. No greeting, no preamble, no filler.\nKeep response under 90 words.`
+    const exampleOutput = toText(task?.exampleOutput ?? '').trim()
+    const prompt = `You are a strict coding mentor and code evaluator.
+Evaluate whether the user's code satisfies the current task and expected output.
 
-    const result = await callGemini(prompt, {
-      temperature: 0.4,
-      maxOutputTokens: 220,
+Task title: ${toText(task?.title)}
+Task description: ${toText(task?.description)}
+Expected example output (may be empty): ${exampleOutput || 'N/A'}
+
+User code:
+${userCode}
+
+Rules:
+- Never provide complete working code.
+- Be specific and concise.
+- If expected example output is provided, check if behavior/output aligns with it.
+- If expected example output is not provided, set outputMatch to true and explain that in outputReason.
+- Return status PASS only when task requirements are satisfied.
+- Return status FAIL if anything required is missing or incorrect.
+
+Return ONLY raw JSON with this exact schema:
+{"status":"PASS|FAIL","feedback":"string","outputMatch":true|false,"outputReason":"string"}
+No markdown. No extra keys.`
+
+    const firstAttempt = await callGemini(prompt, {
+      temperature: 0.2,
+      maxOutputTokens: 260,
     })
-    if (result.error) {
-      return { data: null, error: result.error }
+    if (firstAttempt.error) {
+      return { data: null, error: firstAttempt.error }
     }
 
-    return { data: result.data, error: null }
+    try {
+      const parsed = parseCodeCheckResult(firstAttempt.data)
+      return { data: parsed, error: null }
+    } catch {
+      const retryPrompt = `${prompt}\nYou must return only raw JSON matching the schema exactly.`
+      const secondAttempt = await callGemini(retryPrompt, {
+        temperature: 0.2,
+        maxOutputTokens: 260,
+      })
+
+      if (secondAttempt.error) {
+        return { data: null, error: secondAttempt.error }
+      }
+
+      try {
+        const parsed = parseCodeCheckResult(secondAttempt.data)
+        return { data: parsed, error: null }
+      } catch (error) {
+        return {
+          data: null,
+          error: new Error(
+            `Could not parse code check JSON after retry: ${error.message}`,
+          ),
+        }
+      }
+    }
   }, [])
 
   const askFollowUp = useCallback(

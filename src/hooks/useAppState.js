@@ -70,6 +70,19 @@ export function useAppState() {
     )
   }, [])
 
+  const markTaskIncomplete = useCallback((taskId) => {
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              completed: false,
+            }
+          : task,
+      ),
+    )
+  }, [])
+
   const incrementHints = useCallback(() => {
     setHintsUsed((prev) => prev + 1)
   }, [])
@@ -132,6 +145,7 @@ export function useAppState() {
     updateUserCode,
     appendFeedback,
     markTaskComplete,
+    markTaskIncomplete,
     incrementHints,
     setExampleViewed: setExampleViewedState,
     resetTaskSupportState,

@@ -20,10 +20,12 @@ import {
 } from './lib/buttonStyles'
 import {
   createProject,
+  markProjectIncomplete,
   getProjectTasks,
   getUserProjects,
   markProjectComplete,
   markTaskComplete as markTaskCompleteInDb,
+  markTaskIncomplete as markTaskIncompleteInDb,
   saveTasks,
 } from './lib/db'
 import { detectLanguage } from './lib/detectLanguage'
@@ -101,6 +103,7 @@ function App() {
     setCurrentTaskIndex,
     updateUserCode,
     markTaskComplete,
+    markTaskIncomplete,
     incrementHints,
     setExampleViewed,
     resetTaskSupportState,
@@ -116,8 +119,10 @@ function App() {
   const [projects, setProjects] = useState([])
   const [screen, setScreen] = useState('dashboard')
   const [uiError, setUiError] = useState('')
+  const [isCheckingBeforeComplete, setIsCheckingBeforeComplete] = useState(false)
+  const [isMarkingTaskComplete, setIsMarkingTaskComplete] = useState(false)
   const lastCheckSignatureRef = useRef('')
-  const lastCheckResponseRef = useRef('')
+  const lastCheckResultRef = useRef(null)
   const lastFollowUpSignatureRef = useRef('')
   const lastFollowUpResponseRef = useRef('')
 
@@ -371,20 +376,21 @@ function App() {
     [resetTaskSupportState, setCurrentTaskIndex],
   )
 
-  const handleCheckCode = useCallback(async () => {
+  const runCodeCheck = useCallback(async ({ useCached = true } = {}) => {
     if (!currentTask) {
-      return
+      return { data: null, error: new Error('No current task selected.') }
     }
 
     const checkSignature = `${currentTask.id}::${userCode}`
 
     if (
+      useCached &&
       checkSignature === lastCheckSignatureRef.current &&
-      lastCheckResponseRef.current
+      lastCheckResultRef.current
     ) {
       setUiError('')
-      setFeedbackHistory([{ role: 'ai', message: lastCheckResponseRef.current }])
-      return
+      setFeedbackHistory([{ role: 'ai', message: lastCheckResultRef.current.feedback }])
+      return { data: lastCheckResultRef.current, error: null }
     }
 
     setUiError('')
@@ -395,15 +401,18 @@ function App() {
       const result = await checkUserCode(currentTask, userCode)
       if (result.error) {
         setUiError(result.error.message)
-        return
+        return { data: null, error: result.error }
       }
 
       lastCheckSignatureRef.current = checkSignature
-      lastCheckResponseRef.current = result.data
-      setFeedbackHistory([{ role: 'ai', message: result.data }])
+      lastCheckResultRef.current = result.data
+      setFeedbackHistory([{ role: 'ai', message: result.data.feedback }])
+      return { data: result.data, error: null }
     } catch (error) {
       console.error(error)
-      setUiError(error.message || 'Code check failed.')
+      const normalizedError = new Error(error.message || 'Code check failed.')
+      setUiError(normalizedError.message)
+      return { data: null, error: normalizedError }
     } finally {
       setIsCheckingCode(false)
     }
@@ -414,6 +423,10 @@ function App() {
     setIsCheckingCode,
     userCode,
   ])
+
+  const handleCheckCode = useCallback(async () => {
+    await runCodeCheck({ useCached: true })
+  }, [runCodeCheck])
 
   const handleFollowUp = useCallback(
     async (userQuestion) => {
@@ -477,60 +490,137 @@ function App() {
 
   useEffect(() => {
     lastCheckSignatureRef.current = ''
-    lastCheckResponseRef.current = ''
+    lastCheckResultRef.current = null
+  }, [currentTask?.id, userCode])
+
+  useEffect(() => {
     lastFollowUpSignatureRef.current = ''
     lastFollowUpResponseRef.current = ''
   }, [currentTask?.id])
 
   const handleMarkCurrentTaskComplete = useCallback(async () => {
-    if (!currentTask) {
+    if (!currentTask || isMarkingTaskComplete) {
       return
     }
 
     setUiError('')
+    setIsMarkingTaskComplete(true)
 
-    const updatedTasks = tasks.map((task) =>
-      task.id === currentTask.id ? { ...task, completed: true } : task,
-    )
+    try {
+      if (currentTask.completed) {
+        markTaskIncomplete(currentTask.id)
 
-    markTaskComplete(currentTask.id)
-
-    const { error: taskError } = await markTaskCompleteInDb(currentTask.id)
-    if (taskError) {
-      console.error(taskError)
-      setUiError(taskError.message || 'Could not update task status in database.')
-    }
-
-    const nextTaskIndex = updatedTasks.findIndex((task) => !task.completed)
-
-    if (nextTaskIndex === -1) {
-      if (currentProjectId) {
-        const { error: projectError } = await markProjectComplete(currentProjectId)
-        if (projectError) {
-          console.error(projectError)
-          setUiError(projectError.message || 'Could not mark project complete.')
+        const { error: taskError } = await markTaskIncompleteInDb(currentTask.id)
+        if (taskError) {
+          console.error(taskError)
+          setUiError(taskError.message || 'Could not undo task completion in database.')
         }
+
+        if (currentProjectId) {
+          const { error: projectError } = await markProjectIncomplete(currentProjectId)
+          if (projectError) {
+            console.error(projectError)
+            setUiError(projectError.message || 'Could not update project completion state.')
+          }
+        }
+
+        return
       }
 
-      if (user) {
-        await loadProjects(user.id)
+      const checkSignature = `${currentTask.id}::${userCode}`
+      let validationResult = null
+
+      if (
+        checkSignature === lastCheckSignatureRef.current &&
+        lastCheckResultRef.current
+      ) {
+        validationResult = lastCheckResultRef.current
+        setFeedbackHistory([{ role: 'ai', message: validationResult.feedback }])
+      } else {
+        setIsCheckingBeforeComplete(true)
+        const checkResult = await runCodeCheck({ useCached: true })
+        setIsCheckingBeforeComplete(false)
+
+        if (checkResult.error || !checkResult.data) {
+          return
+        }
+
+        validationResult = checkResult.data
       }
 
-      setScreen('completion')
-      return
+      const hasPassingValidation =
+        validationResult?.status === 'PASS' && validationResult?.outputMatch === true
+
+      if (!hasPassingValidation) {
+        const validationDetails = [
+          validationResult?.feedback,
+          validationResult?.outputReason,
+        ]
+          .filter(Boolean)
+          .join(' ')
+
+        setUiError(
+          validationDetails
+            ? `Task is not ready to complete yet. ${validationDetails}`
+            : 'Task is not ready to complete yet. Fix the check feedback and try again.',
+        )
+        return
+      }
+
+      const updatedTasks = tasks.map((task) =>
+        task.id === currentTask.id ? { ...task, completed: true } : task,
+      )
+
+      markTaskComplete(currentTask.id)
+
+      const { error: taskError } = await markTaskCompleteInDb(currentTask.id)
+      if (taskError) {
+        console.error(taskError)
+        setUiError(taskError.message || 'Could not update task status in database.')
+      }
+
+      const nextTaskIndex = updatedTasks.findIndex((task) => !task.completed)
+
+      if (nextTaskIndex === -1) {
+        if (currentProjectId) {
+          const { error: projectError } = await markProjectComplete(currentProjectId)
+          if (projectError) {
+            console.error(projectError)
+            setUiError(projectError.message || 'Could not mark project complete.')
+          }
+        }
+
+        if (user) {
+          await loadProjects(user.id)
+        }
+
+        setScreen('completion')
+        return
+      }
+
+      setCurrentTaskIndex(nextTaskIndex)
+      resetTaskSupportState()
+    } catch (error) {
+      console.error(error)
+      setUiError(error.message || 'Could not complete task.')
+    } finally {
+      setIsCheckingBeforeComplete(false)
+      setIsMarkingTaskComplete(false)
     }
-
-    setCurrentTaskIndex(nextTaskIndex)
-    resetTaskSupportState()
   }, [
     currentProjectId,
     currentTask,
+    isMarkingTaskComplete,
     loadProjects,
     markTaskComplete,
+    markTaskIncomplete,
     resetTaskSupportState,
+    runCodeCheck,
     setCurrentTaskIndex,
+    setFeedbackHistory,
     tasks,
     user,
+    userCode,
   ])
 
   const handleBackToDashboard = useCallback(async () => {
@@ -541,6 +631,80 @@ function App() {
       await loadProjects(user.id)
     }
   }, [loadProjects, resetApp, user])
+
+  const handleReopenLastTaskFromCompletion = useCallback(async () => {
+    if (isMarkingTaskComplete || tasks.length === 0) {
+      return
+    }
+
+    let reopenTaskIndex = -1
+    for (let index = tasks.length - 1; index >= 0; index -= 1) {
+      if (tasks[index]?.completed) {
+        reopenTaskIndex = index
+        break
+      }
+    }
+
+    if (reopenTaskIndex === -1) {
+      setUiError('No completed task is available to reopen.')
+      return
+    }
+
+    const reopenTask = tasks[reopenTaskIndex]
+    if (!reopenTask?.id) {
+      setUiError('Could not identify which task to reopen.')
+      return
+    }
+
+    setUiError('')
+    setIsMarkingTaskComplete(true)
+
+    try {
+      markTaskIncomplete(reopenTask.id)
+
+      const { error: taskError } = await markTaskIncompleteInDb(reopenTask.id)
+      if (taskError) {
+        markTaskComplete(reopenTask.id)
+        console.error(taskError)
+        setUiError(taskError.message || 'Could not reopen task in database.')
+        return
+      }
+
+      if (currentProjectId) {
+        const { error: projectError } = await markProjectIncomplete(currentProjectId)
+        if (projectError) {
+          console.error(projectError)
+          setUiError(projectError.message || 'Could not update project completion state.')
+        }
+      }
+
+      setCurrentTaskIndex(reopenTaskIndex)
+      resetTaskSupportState()
+      setScreen('workspace')
+    } catch (error) {
+      console.error(error)
+      setUiError(error.message || 'Could not reopen task.')
+    } finally {
+      setIsMarkingTaskComplete(false)
+    }
+  }, [
+    currentProjectId,
+    isMarkingTaskComplete,
+    markTaskComplete,
+    markTaskIncomplete,
+    resetTaskSupportState,
+    setCurrentTaskIndex,
+    tasks,
+  ])
+
+  let markAsCompleteLabel = 'Mark as Complete'
+  if (isCheckingBeforeComplete) {
+    markAsCompleteLabel = 'Checking before completion...'
+  } else if (isMarkingTaskComplete) {
+    markAsCompleteLabel = 'Updating task status...'
+  } else if (currentTask?.completed) {
+    markAsCompleteLabel = 'Undo Complete'
+  }
 
   if (isAuthenticatingState) {
     return <p className="p-4">Loading auth state...</p>
@@ -590,6 +754,8 @@ function App() {
       <CompletionScreen
         onBackToDashboard={handleBackToDashboard}
         onStartNew={handleStartNewProject}
+        onReopenLastTask={handleReopenLastTaskFromCompletion}
+        isReopeningTask={isMarkingTaskComplete}
       />
     )
   }
@@ -621,7 +787,9 @@ function App() {
       {uiError && <p className="text-red-600">{uiError}</p>}
       {isLoadingProjects && <p>Loading projects...</p>}
       {isGeneratingRoadmap && <p>Generating roadmap...</p>}
-      {isCheckingCode && <p>Checking code...</p>}
+      {isCheckingCode && !isCheckingBeforeComplete && <p>Checking code...</p>}
+      {isCheckingBeforeComplete && <p>Checking code before completion...</p>}
+      {isMarkingTaskComplete && !isCheckingBeforeComplete && <p>Updating task status...</p>}
       {isAskingFollowUp && <p>Getting mentor reply...</p>}
 
       <section className="grid grid-cols-1 lg:grid-cols-[300px_1fr_360px] gap-3">
@@ -641,9 +809,14 @@ function App() {
               type="button"
               className={`${buttonPrimary} ${sizeSm} mt-3`}
               onClick={handleMarkCurrentTaskComplete}
-              disabled={!currentTask || currentTask.completed}
+              disabled={
+                !currentTask ||
+                isCheckingCode ||
+                isCheckingBeforeComplete ||
+                isMarkingTaskComplete
+              }
             >
-              {currentTask?.completed ? 'Already Complete' : 'Mark as Complete'}
+              {markAsCompleteLabel}
             </button>
           </section>
 

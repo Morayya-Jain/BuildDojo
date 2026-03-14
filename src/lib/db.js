@@ -144,6 +144,25 @@ export async function markTaskComplete(taskId) {
   }
 }
 
+export async function markTaskIncomplete(taskId) {
+  if (!supabase) {
+    return getSupabaseUnavailableResponse()
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ completed: false })
+      .eq('id', taskId)
+      .select()
+      .single()
+
+    return { data, error }
+  } catch (error) {
+    return { data: null, error }
+  }
+}
+
 export async function markProjectComplete(projectId) {
   if (!supabase) {
     return getSupabaseUnavailableResponse()
@@ -153,6 +172,25 @@ export async function markProjectComplete(projectId) {
     const { data, error } = await supabase
       .from('projects')
       .update({ completed: true })
+      .eq('id', projectId)
+      .select()
+      .single()
+
+    return { data, error }
+  } catch (error) {
+    return { data: null, error }
+  }
+}
+
+export async function markProjectIncomplete(projectId) {
+  if (!supabase) {
+    return getSupabaseUnavailableResponse()
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ completed: false })
       .eq('id', projectId)
       .select()
       .single()
