@@ -1,8 +1,13 @@
 import logo from '../assets/dojobuild-logo-riya.png'
+import { getProjectDisplayTitle } from '../lib/projectTitle'
 
 function normalizeSkillLabel(value) {
   const normalized = `${value || ''}`.trim().toLowerCase()
-  if (normalized === 'advanced' || normalized === 'master') {
+  if (normalized === 'master') {
+    return 'Master'
+  }
+
+  if (normalized === 'advanced') {
     return 'Advanced'
   }
 
@@ -17,6 +22,8 @@ function Dashboard({
   projects = [],
   isLoadingProjects = false,
   deletingProjectId = null,
+  isBackfillingProjectTitles = false,
+  projectTitleStatusMessage = '',
   onStartNewProject = () => {},
   onEditProfile = () => {},
   onContinueProject = () => {},
@@ -81,6 +88,12 @@ function Dashboard({
 
           {isLoadingProjects ? <p className="mt-4 text-sm text-slate-700">Loading projects...</p> : null}
           {isDeletingProject ? <p className="mt-2 text-sm text-slate-700">Deleting project...</p> : null}
+          {isBackfillingProjectTitles ? (
+            <p className="mt-2 text-sm text-slate-700">Updating project titles...</p>
+          ) : null}
+          {projectTitleStatusMessage ? (
+            <p className="mt-2 text-sm text-red-600">{projectTitleStatusMessage}</p>
+          ) : null}
           {errorMessage ? <p className="mt-3 text-sm text-red-600">{errorMessage}</p> : null}
 
           {!isLoadingProjects && projects.length === 0 ? (
@@ -94,6 +107,9 @@ function Dashboard({
                 className="rounded-2xl border-2 border-slate-300 bg-slate-100 p-4 transition-colors hover:border-green-200 md:p-6"
               >
                 <div className="space-y-3">
+                  <h3 className="break-words text-lg font-semibold text-slate-900 md:text-xl">
+                    {getProjectDisplayTitle(project)}
+                  </h3>
                   <p className="break-words text-sm text-slate-900 md:text-base">
                     <strong className="font-semibold">Description:</strong> {project.description}
                   </p>

@@ -46,7 +46,7 @@ test('deriveSkillBadge maps expertise levels to badge labels', () => {
   assert.equal(deriveSkillBadge({ expertiseLevel: 'advanced' }), 'Advanced')
   assert.equal(deriveSkillBadge({ expertise_level: 'exploring' }), 'Intermediate')
   assert.equal(deriveSkillBadge({ expertiseLevel: 'student' }), 'Intermediate')
-  assert.equal(deriveSkillBadge({ expertiseLevel: 'master' }), 'Advanced')
+  assert.equal(deriveSkillBadge({ expertiseLevel: 'master' }), 'Master')
   assert.equal(deriveSkillBadge({ expertiseLevel: 'unknown' }), 'Beginner')
   assert.equal(deriveSkillBadge(null), 'Beginner')
 })

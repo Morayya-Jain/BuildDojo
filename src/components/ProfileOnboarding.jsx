@@ -67,6 +67,15 @@ function OptionIcon({ value, className = 'h-9 w-9 text-green-700' }) {
     )
   }
 
+  if (value === 'master') {
+    return (
+      <svg viewBox="0 0 48 48" fill="none" className={iconClass} aria-hidden="true">
+        <path d="m24 7 4.8 9.8L40 18.5l-8 7.7 1.9 11.3L24 32.7l-9.9 4.8L16 26.2l-8-7.7 11.2-1.7L24 7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+        <circle cx="24" cy="23" r="2.5" fill="currentColor" />
+      </svg>
+    )
+  }
+
   if (value === 'frontend') {
     return (
       <svg viewBox="0 0 48 48" fill="none" className={iconClass} aria-hidden="true">

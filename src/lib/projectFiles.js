@@ -147,9 +147,151 @@ function createFile(path, content = '', sortIndex = 0) {
   }
 }
 
-function createDefaultProjectFiles(projectDescription, userCode = '') {
+function runtimeLanguageFromFile(file) {
+  if (!file || typeof file !== 'object') {
+    return ''
+  }
+
+  return runtimeLanguageFromPath(file.path || file.name || '') || sanitizeLanguage(file.language)
+}
+
+function buildUniqueFilePath(basePath, existingFiles = []) {
+  const safeBasePath = sanitizeFilePath(basePath)
+  if (!safeBasePath) {
+    return ''
+  }
+
+  const normalizedExistingPaths = new Set(
+    (existingFiles || [])
+      .map((file) => sanitizeFilePath(file?.path || file?.name || '').toLowerCase())
+      .filter(Boolean),
+  )
+
+  if (!normalizedExistingPaths.has(safeBasePath.toLowerCase())) {
+    return safeBasePath
+  }
+
+  const segments = safeBasePath.split('/')
+  const fileName = segments.pop() || ''
+  const dotIndex = fileName.lastIndexOf('.')
+  const stem = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName
+  const extension = dotIndex > 0 ? fileName.slice(dotIndex) : ''
+
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidateName = `${stem}-${suffix}${extension}`
+    const candidatePath = [...segments, candidateName].join('/')
+    if (!normalizedExistingPaths.has(candidatePath.toLowerCase())) {
+      return candidatePath
+    }
+  }
+
+  return ''
+}
+
+function createStarterFileForLanguage(language, existingFiles = []) {
+  const normalizedLanguage = sanitizeLanguage(language)
+  if (!normalizedLanguage) {
+    return null
+  }
+
+  const starterByLanguage = {
+    javascript: {
+      path: 'main.js',
+      content: '// Start coding here\n',
+    },
+    typescript: {
+      path: 'main.ts',
+      content: '// Start coding here\n',
+    },
+    python: {
+      path: 'main.py',
+      content: '# Start coding here\n',
+    },
+    sql: {
+      path: 'query.sql',
+      content: '-- Write SQL statements here\n',
+    },
+    html: {
+      path: 'index.html',
+      content: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project Preview</title>
+  </head>
+  <body>
+    <h1>Build your feature here</h1>
+  </body>
+</html>`,
+    },
+    java: {
+      path: 'Main.java',
+      content: '// Start coding here\n',
+    },
+    csharp: {
+      path: 'Program.cs',
+      content: '// Start coding here\n',
+    },
+    go: {
+      path: 'main.go',
+      content: '// Start coding here\n',
+    },
+    rust: {
+      path: 'main.rs',
+      content: '// Start coding here\n',
+    },
+    ruby: {
+      path: 'main.rb',
+      content: '# Start coding here\n',
+    },
+    php: {
+      path: 'index.php',
+      content: '<?php\n// Start coding here\n',
+    },
+    swift: {
+      path: 'main.swift',
+      content: '// Start coding here\n',
+    },
+    kotlin: {
+      path: 'Main.kt',
+      content: "// Start coding here\n",
+    },
+  }
+
+  const starter = starterByLanguage[normalizedLanguage]
+  if (!starter) {
+    return null
+  }
+
+  const uniquePath = buildUniqueFilePath(starter.path, existingFiles)
+  if (!uniquePath) {
+    return null
+  }
+
+  return createFile(uniquePath, starter.content, existingFiles.length)
+}
+
+function findFirstFileByLanguage(files = [], language) {
+  const normalizedLanguage = sanitizeLanguage(language)
+  if (!normalizedLanguage) {
+    return null
+  }
+
+  const normalizedFiles = normalizeProjectFiles(files)
+  return (
+    normalizedFiles.find((file) => runtimeLanguageFromFile(file) === normalizedLanguage) || null
+  )
+}
+
+function createDefaultProjectFiles(
+  projectDescription,
+  userCode = '',
+  preferredRuntimeLanguage = '',
+) {
+  const preferredLanguage = sanitizeLanguage(preferredRuntimeLanguage)
   const inferred = detectLanguage(projectDescription, userCode)
-  const startLanguage = sanitizeLanguage(inferred) || 'javascript'
+  const startLanguage = preferredLanguage || sanitizeLanguage(inferred) || 'javascript'
 
   if (startLanguage === 'html') {
     const defaultHtml = `<!doctype html>
@@ -173,19 +315,14 @@ function createDefaultProjectFiles(projectDescription, userCode = '') {
     ])
   }
 
-  if (startLanguage === 'python') {
-    return normalizeProjectFiles([createFile('main.py', userCode || '# Start coding here\n', 0)])
-  }
-
-  if (startLanguage === 'sql') {
+  const starterFile = createStarterFileForLanguage(startLanguage, [])
+  if (starterFile) {
     return normalizeProjectFiles([
-      createFile('query.sql', userCode || '-- Write SQL statements here\n', 0),
-    ])
-  }
-
-  if (startLanguage === 'typescript') {
-    return normalizeProjectFiles([
-      createFile('main.ts', userCode || '// Start coding here\n', 0),
+      {
+        ...starterFile,
+        content: userCode || starterFile.content,
+        sort_index: 0,
+      },
     ])
   }
 
@@ -309,12 +446,15 @@ function parseImportPackage(rawText) {
 export {
   buildExportPackage,
   buildPreviewSrcDoc,
+  createStarterFileForLanguage,
   createDefaultProjectFiles,
   createFile,
   editorLanguageFromFile,
   fileNameFromPath,
+  findFirstFileByLanguage,
   normalizeProjectFiles,
   parseImportPackage,
+  runtimeLanguageFromFile,
   runtimeLanguageFromPath,
   sanitizeFilePath,
   toPersistedFiles,

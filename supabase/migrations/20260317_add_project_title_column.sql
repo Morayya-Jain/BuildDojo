@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE projects
+  ADD COLUMN IF NOT EXISTS title text;
+
+COMMIT;
+

@@ -6,7 +6,7 @@ Build and maintain an AI-powered coding mentor web app that teaches users to bui
 ## Product Constraints
 - Frontend-only architecture (no backend server).
 - AI provider: Gemini only.
-- Model routing: `gemini-2.5-flash` for beginner/intermediate, `gemini-2.5-pro` for hard/advanced.
+- Model routing: `gemini-2.5-flash` for beginner/intermediate, `gemini-2.5-pro` for hard/advanced/master.
 - Auth + DB: Supabase only (email/password for MVP).
 - UI priority: functional skeleton first, polish later.
 - Deployment target: Netlify.

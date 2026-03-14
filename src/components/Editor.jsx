@@ -34,20 +34,26 @@ function Editor({
           ))}
         </div>
       ) : null}
-      <MonacoEditor
-        height="62vh"
-        language={editorLanguage}
-        theme="vs-dark"
-        value={value ?? ''}
-        onChange={(newValue) => onChange(newValue || '')}
-        options={{
-          readOnly,
-          minimap: { enabled: false },
-          fontSize: 14,
-          scrollBeyondLastLine: false,
-          lineNumbersMinChars: 3,
-        }}
-      />
+      <div className="h-[22rem] sm:h-[24rem] md:h-[28rem] lg:h-[32rem]">
+        <MonacoEditor
+          height="100%"
+          language={editorLanguage}
+          theme="vs-dark"
+          value={value ?? ''}
+          onChange={(newValue) => onChange(newValue || '')}
+          options={{
+            readOnly,
+            minimap: { enabled: false },
+            fontSize: 14,
+            scrollBeyondLastLine: false,
+            lineNumbersMinChars: 3,
+            automaticLayout: true,
+            scrollbar: {
+              alwaysConsumeMouseWheel: false,
+            },
+          }}
+        />
+      </div>
     </section>
   )
 }

@@ -6,6 +6,9 @@ function FeedbackPanel({
   feedbackHistory,
   isCheckingCode,
   isAskingFollowUp,
+  followUpSuggestions = [],
+  isGeneratingFollowUpSuggestions = false,
+  followUpSuggestionsNotice = '',
   onCheckCode,
   onAskFollowUp,
   errorMessage,
@@ -21,6 +24,10 @@ function FeedbackPanel({
 
     await onAskFollowUp(question)
     setQuestion('')
+  }
+
+  const handleSuggestionClick = (suggestion) => {
+    setQuestion(suggestion)
   }
 
   return (
@@ -80,6 +87,36 @@ function FeedbackPanel({
         >
           {isAskingFollowUp ? 'Sending...' : 'Send question'}
         </button>
+
+        {isGeneratingFollowUpSuggestions ? (
+          <p className="text-xs text-slate-500">Generating suggested questions...</p>
+        ) : null}
+
+        {followUpSuggestions.length > 0 ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+            <p className="text-xs font-medium text-slate-600">Suggested follow-up questions</p>
+            <div className="mt-2 flex flex-col items-start gap-2">
+              {followUpSuggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="inline-flex max-w-full items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
+                  disabled={isAskingFollowUp || isGeneratingFollowUpSuggestions}
+                  title={suggestion}
+                >
+                  <span className="block max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap sm:max-w-[260px]">
+                    {suggestion}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {followUpSuggestionsNotice ? (
+          <p className="text-xs text-slate-500">{followUpSuggestionsNotice}</p>
+        ) : null}
       </form>
 
       {errorMessage && <p className="text-red-600">{errorMessage}</p>}

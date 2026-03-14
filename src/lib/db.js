@@ -4,16 +4,17 @@ import { normalizeProfile, toProfilePayload } from './profile'
 function normalizeProjectSkillLevel(value) {
   const normalized = `${value || ''}`.trim().toLowerCase()
 
-  if (normalized === 'beginner' || normalized === 'intermediate' || normalized === 'advanced') {
+  if (
+    normalized === 'beginner' ||
+    normalized === 'intermediate' ||
+    normalized === 'advanced' ||
+    normalized === 'master'
+  ) {
     return normalized
   }
 
   if (normalized === 'exploring' || normalized === 'student') {
     return 'intermediate'
-  }
-
-  if (normalized === 'master') {
-    return 'advanced'
   }
 
   return 'intermediate'
@@ -31,6 +32,11 @@ function isProjectFilesTableMissing(error) {
   return /project_files|schema cache|relation .*project_files|Could not find the 'project_files'|does not exist/i.test(
     message,
   )
+}
+
+function isProjectTitleColumnMissing(error) {
+  const message = error?.message || ''
+  return /column .*title|schema cache|Could not find the 'title' column/i.test(message)
 }
 
 export async function getUserProfile(userId) {
@@ -83,21 +89,41 @@ export async function upsertUserProfile(userId, profileInput) {
   }
 }
 
-export async function createProject(userId, description, skillLevel) {
+export async function createProject(userId, description, skillLevel, title = '') {
   if (!supabase) {
     return getSupabaseUnavailableResponse()
   }
 
   try {
+    const payload = {
+      user_id: userId,
+      description,
+      skill_level: normalizeProjectSkillLevel(skillLevel),
+    }
+
+    if (`${title || ''}`.trim()) {
+      payload.title = `${title}`.trim()
+    }
+
     const { data, error } = await supabase
       .from('projects')
-      .insert({
-        user_id: userId,
-        description,
-        skill_level: normalizeProjectSkillLevel(skillLevel),
-      })
+      .insert(payload)
       .select()
       .single()
+
+    if (error && payload.title && isProjectTitleColumnMissing(error)) {
+      const { data: legacyData, error: legacyError } = await supabase
+        .from('projects')
+        .insert({
+          user_id: userId,
+          description,
+          skill_level: normalizeProjectSkillLevel(skillLevel),
+        })
+        .select()
+        .single()
+
+      return { data: legacyData, error: legacyError }
+    }
 
     return { data, error }
   } catch (error) {
@@ -478,6 +504,35 @@ export async function markProjectIncomplete(projectId) {
       .eq('id', projectId)
       .select()
       .single()
+
+    return { data, error }
+  } catch (error) {
+    return { data: null, error }
+  }
+}
+
+export async function updateProjectTitle(projectId, userId, title) {
+  if (!supabase) {
+    return getSupabaseUnavailableResponse()
+  }
+
+  try {
+    const normalizedTitle = `${title || ''}`.trim()
+    if (!normalizedTitle) {
+      return { data: null, error: null }
+    }
+
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ title: normalizedTitle })
+      .eq('id', projectId)
+      .eq('user_id', userId)
+      .select()
+      .single()
+
+    if (error && isProjectTitleColumnMissing(error)) {
+      return { data: null, error: null }
+    }
 
     return { data, error }
   } catch (error) {

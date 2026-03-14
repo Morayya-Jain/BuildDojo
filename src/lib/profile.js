@@ -35,6 +35,12 @@ export const EXPERTISE_OPTIONS = [
     label: 'Advanced',
     description: 'You are experienced and want concise, high-level technical coaching.',
   },
+  {
+    value: 'master',
+    label: 'Master',
+    description:
+      'You want high-signal coaching focused on architecture, reliability, and performance tradeoffs.',
+  },
 ]
 
 export const SKILL_OPTIONS = [
@@ -61,7 +67,6 @@ const INTEREST_VALUE_SET = new Set(INTEREST_OPTIONS.map((option) => option.value
 const LEGACY_EXPERTISE_LEVEL_MAP = {
   exploring: 'intermediate',
   student: 'intermediate',
-  master: 'advanced',
 }
 
 function toStringArray(value) {

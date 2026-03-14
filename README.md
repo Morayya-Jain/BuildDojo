@@ -8,7 +8,7 @@ Frontend-only MVP built with React + Vite, Monaco Editor, Supabase Auth/DB, and 
 - Tailwind CSS (utility classes)
 - Monaco Editor (`@monaco-editor/react`)
 - Supabase (`@supabase/supabase-js`)
-- Gemini API (`gemini-2.5-flash` for beginner/intermediate, `gemini-2.5-pro` for hard/advanced)
+- Gemini API (`gemini-2.5-flash` for beginner/intermediate, `gemini-2.5-pro` for hard/advanced/master)
 - Netlify deploy target
 
 ## Environment

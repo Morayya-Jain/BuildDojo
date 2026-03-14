@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { buttonDanger, buttonPrimary, buttonSecondary, sizeSm } from '../lib/buttonStyles'
+import { buttonPrimary, buttonSecondary, sizeSm } from '../lib/buttonStyles'
 import {
   LANGUAGE_CHOICES,
   canRunInConsole,
@@ -246,24 +246,41 @@ function formatSqlResultSet(resultSet) {
   return lines.join('\n')
 }
 
-function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview }) {
+function RunConsole({
+  code,
+  detectedLanguage,
+  fileLanguage = '',
+  lockedLanguage = '',
+  hasLockedLanguageMismatch = false,
+  onResolveLockedLanguageMismatch,
+  onRunPreview,
+}) {
   const [selectedLanguage, setSelectedLanguage] = useState('auto')
   const [outputLines, setOutputLines] = useState([])
   const [isRunning, setIsRunning] = useState(false)
   const [isPreparingRuntime, setIsPreparingRuntime] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia('(max-width: 767px)').matches,
+  )
+  const [isOutputExpanded, setIsOutputExpanded] = useState(false)
+  const [hasCollapsedOutputNotice, setHasCollapsedOutputNotice] = useState(false)
 
   const isMountedRef = useRef(true)
   const workersRef = useRef({ javascript: null, python: null })
   const pendingWorkerRunRef = useRef(null)
   const sqlCancelTokenRef = useRef(null)
   const runCounterRef = useRef(0)
+  const outputPanelRef = useRef(null)
 
   const normalizedLockedLanguage = sanitizeLanguage(lockedLanguage)
+  const normalizedDetectedLanguage =
+    sanitizeLanguage(fileLanguage) || sanitizeLanguage(detectedLanguage)
   const resolvedLanguage = resolveRuntimeLanguage({
-    detectedLanguage,
+    detectedLanguage: normalizedDetectedLanguage || detectedLanguage,
     selectedLanguage,
     lockedLanguage: normalizedLockedLanguage,
   })
+  const languageSelectValue = normalizedLockedLanguage || selectedLanguage
 
   const isJavascript = resolvedLanguage === 'javascript'
   const isTypescript = resolvedLanguage === 'typescript'
@@ -272,19 +289,96 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
   const isHtml = isPreviewLanguage(resolvedLanguage)
   const isConsoleRunnable = canRunInConsole(resolvedLanguage)
   const canTriggerPreview = isHtml && typeof onRunPreview === 'function'
+  const isLanguageSelectorLocked = Boolean(normalizedLockedLanguage)
+  const canResolveMismatch =
+    isLanguageSelectorLocked &&
+    hasLockedLanguageMismatch &&
+    typeof onResolveLockedLanguageMismatch === 'function'
+  const shouldShowConsoleOutput = isConsoleRunnable && (!isMobileViewport || isOutputExpanded)
 
-  const appendLine = useCallback((type, message) => {
-    setOutputLines((prev) => [
-      ...prev,
-      {
-        type,
-        message,
-      },
-    ])
-  }, [])
+  const languageChoices = useMemo(() => {
+    if (
+      normalizedLockedLanguage &&
+      !LANGUAGE_CHOICES.some((choice) => choice.value === normalizedLockedLanguage)
+    ) {
+      return [
+        ...LANGUAGE_CHOICES,
+        {
+          value: normalizedLockedLanguage,
+          label: prettyLanguageName(normalizedLockedLanguage),
+        },
+      ]
+    }
+
+    return LANGUAGE_CHOICES
+  }, [normalizedLockedLanguage])
+
+  const openOutputPanel = useCallback(
+    ({ scroll = false, behavior = 'smooth' } = {}) => {
+      if (isMobileViewport) {
+        setIsOutputExpanded(true)
+      }
+
+      setHasCollapsedOutputNotice(false)
+
+      if (!scroll || typeof window === 'undefined') {
+        return
+      }
+
+      window.setTimeout(() => {
+        outputPanelRef.current?.scrollIntoView({
+          behavior,
+          block: 'start',
+        })
+      }, 0)
+    },
+    [isMobileViewport],
+  )
+
+  const appendLine = useCallback(
+    (type, message) => {
+      setOutputLines((prev) => [
+        ...prev,
+        {
+          type,
+          message,
+        },
+      ])
+
+      if (isMobileViewport && !isOutputExpanded) {
+        setHasCollapsedOutputNotice(true)
+      }
+
+      if (type === 'runtime_error' || type === 'stderr') {
+        openOutputPanel({ scroll: true })
+      }
+    },
+    [isMobileViewport, isOutputExpanded, openOutputPanel],
+  )
+
+  const replaceOutput = useCallback(
+    (lines) => {
+      const safeLines = Array.isArray(lines) ? lines : []
+      setOutputLines(safeLines)
+
+      if (safeLines.length === 0) {
+        setHasCollapsedOutputNotice(false)
+        return
+      }
+
+      if (isMobileViewport && !isOutputExpanded) {
+        setHasCollapsedOutputNotice(true)
+        return
+      }
+
+      setHasCollapsedOutputNotice(false)
+    },
+    [isMobileViewport, isOutputExpanded],
+  )
 
   const clearOutput = useCallback(() => {
     setOutputLines([])
+    setHasCollapsedOutputNotice(false)
   }, [])
 
   const terminateWorker = useCallback((kind) => {
@@ -395,6 +489,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
         setIsRunning(true)
         setIsPreparingRuntime(kind === 'python')
         setOutputLines([])
+        setHasCollapsedOutputNotice(false)
 
         const worker = getWorker(kind)
         const runId = runCounterRef.current + 1
@@ -451,6 +546,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
       setIsRunning(true)
       setIsPreparingRuntime(true)
       setOutputLines([])
+      setHasCollapsedOutputNotice(false)
 
       let db = null
 
@@ -527,34 +623,13 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
     [appendLine],
   )
 
-  const handleStopExecution = useCallback(() => {
-    let didStop = false
-
-    const pending = pendingWorkerRunRef.current
-    if (pending) {
-      clearTimeout(pending.timeoutId)
-      pendingWorkerRunRef.current = null
-      terminateWorker(pending.kind)
-      didStop = true
-    }
-
-    if (sqlCancelTokenRef.current && !sqlCancelTokenRef.current.cancelled) {
-      sqlCancelTokenRef.current.cancelled = true
-      didStop = true
-    }
-
-    if (didStop) {
-      appendLine('warn', 'Execution stopped by user.')
-      setIsRunning(false)
-      setIsPreparingRuntime(false)
-    }
-  }, [appendLine, terminateWorker])
-
   const handleRunCode = useCallback(async () => {
+    openOutputPanel({ scroll: true })
+
     try {
       if (canTriggerPreview) {
         await onRunPreview()
-        setOutputLines([
+        replaceOutput([
           {
             type: 'info',
             message: 'Preview refreshed.',
@@ -566,7 +641,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
       const normalized = normalizeRunnableCode(code, resolvedLanguage)
 
       if (!normalized.ok) {
-        setOutputLines([
+        replaceOutput([
           {
             type: 'warn',
             message: normalized.message,
@@ -602,7 +677,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
         )
 
         if (diagnostics.length > 0) {
-          setOutputLines(diagnostics.map((message) => ({ type: 'runtime_error', message })))
+          replaceOutput(diagnostics.map((message) => ({ type: 'runtime_error', message })))
           return
         }
 
@@ -627,7 +702,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
         await runSqlCode(normalized.code)
       }
     } catch (error) {
-      setOutputLines([
+      replaceOutput([
         {
           type: 'runtime_error',
           message: error.message || 'Could not run code.',
@@ -637,6 +712,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
       setIsPreparingRuntime(false)
     }
   }, [
+    openOutputPanel,
     code,
     isJavascript,
     canTriggerPreview,
@@ -645,6 +721,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
     isTypescript,
     resolvedLanguage,
     onRunPreview,
+    replaceOutput,
     runInWorker,
     runSqlCode,
   ])
@@ -670,6 +747,37 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
       terminateWorker('python')
     }
   }, [terminateWorker])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    const mediaQuery = window.matchMedia('(max-width: 767px)')
+    setIsMobileViewport(mediaQuery.matches)
+
+    const handleViewportChange = (event) => {
+      setIsMobileViewport(event.matches)
+    }
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleViewportChange)
+      return () => {
+        mediaQuery.removeEventListener('change', handleViewportChange)
+      }
+    }
+
+    mediaQuery.addListener(handleViewportChange)
+    return () => {
+      mediaQuery.removeListener(handleViewportChange)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isMobileViewport || isOutputExpanded || outputLines.length === 0) {
+      setHasCollapsedOutputNotice(false)
+    }
+  }, [isMobileViewport, isOutputExpanded, outputLines.length])
 
   const runButtonText = useMemo(() => {
     if (!isRunning) {
@@ -699,70 +807,32 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
     return 'Running...'
   }, [canTriggerPreview, isPreparingRuntime, isPython, isRunning, isSql, isTypescript])
 
-  const helperText = useMemo(() => {
-    if (isJavascript) {
-      return 'JavaScript mode: console output is shown below.'
-    }
-
-    if (isTypescript) {
-      return 'TypeScript mode: code is transpiled, then run as JavaScript.'
-    }
-
-    if (isPython) {
-      return 'Python mode: print() output and Python errors are shown below.'
-    }
-
-    if (isSql) {
-      return 'SQL mode: queries run against an in-memory database for this run only.'
-    }
-
-    if (isHtml) {
-      return 'HTML mode: your code is rendered in the preview below.'
-    }
-
-    return `Runtime is not available for ${prettyLanguageName(resolvedLanguage)} in this frontend-only app.`
-  }, [isHtml, isJavascript, isPython, isSql, isTypescript, resolvedLanguage])
+  const compactActionButtonClass = 'px-2.5 py-1 text-xs leading-5'
 
   return (
-    <section className="border p-3 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-lg font-semibold">Run & Output</h2>
-
-        <div className="flex items-center gap-2">
-          <label htmlFor="runtime-language" className="text-sm text-slate-700">
+    <section className="flex flex-col gap-2 border border-slate-300 bg-white p-2">
+      <div className="sticky top-2 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white/95 px-2 py-2 backdrop-blur">
+          <label htmlFor="runtime-language" className="text-xs text-slate-700">
             Language
           </label>
           <select
             id="runtime-language"
-            className="border p-1.5 text-sm"
-            value={selectedLanguage}
+            className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none"
+            value={languageSelectValue}
             onChange={(event) => setSelectedLanguage(event.target.value)}
-            disabled={isRunning || Boolean(normalizedLockedLanguage)}
+            disabled={isRunning || isLanguageSelectorLocked}
           >
-            {LANGUAGE_CHOICES.map((choice) => (
+            {languageChoices.map((choice) => (
               <option key={choice.value} value={choice.value}>
                 {choice.label}
               </option>
             ))}
           </select>
-        </div>
-      </div>
 
-      <p className="text-sm text-slate-700">
-        Detected: {prettyLanguageName(detectedLanguage)}. Active: {prettyLanguageName(resolvedLanguage)}.
-      </p>
-
-      {normalizedLockedLanguage ? (
-        <p className="text-sm text-slate-700">
-          This task is language-locked to {prettyLanguageName(normalizedLockedLanguage)}.
-        </p>
-      ) : null}
-
-      <div className="flex gap-2">
         {isConsoleRunnable || canTriggerPreview ? (
           <button
             type="button"
-            className={`${buttonPrimary} ${sizeSm}`}
+            className={`${buttonPrimary} ${sizeSm} ${compactActionButtonClass}`}
             onClick={handleRunCode}
             disabled={isRunning}
           >
@@ -770,30 +840,55 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview 
           </button>
         ) : null}
 
-        {isRunning ? (
-          <button
-            type="button"
-            className={`${buttonDanger} ${sizeSm}`}
-            onClick={handleStopExecution}
-          >
-            Stop
-          </button>
-        ) : null}
-
         <button
           type="button"
-          className={`${buttonSecondary} ${sizeSm}`}
+          className={`${buttonSecondary} ${sizeSm} ${compactActionButtonClass}`}
           onClick={clearOutput}
           disabled={outputLines.length === 0}
         >
           Clear Output
         </button>
+
+        {isConsoleRunnable ? (
+          <button
+            type="button"
+            className={`${buttonSecondary} ${sizeSm} ${compactActionButtonClass}`}
+            onClick={() => openOutputPanel({ scroll: true })}
+          >
+            Open Output
+          </button>
+        ) : null}
+
+        {canResolveMismatch ? (
+          <button
+            type="button"
+            className={`${buttonSecondary} ${sizeSm} ${compactActionButtonClass}`}
+            onClick={onResolveLockedLanguageMismatch}
+            disabled={isRunning}
+          >
+            Match Locked File
+          </button>
+        ) : null}
       </div>
 
-      <p className="text-sm text-slate-700">{helperText}</p>
+      {isConsoleRunnable && isMobileViewport && !isOutputExpanded ? (
+        <button
+          type="button"
+          className={`rounded-md border p-2 text-left text-xs ${hasCollapsedOutputNotice ? 'border-emerald-400 bg-emerald-50 text-emerald-800' : 'border-slate-300 bg-slate-50 text-slate-700'}`}
+          onClick={() => openOutputPanel({ scroll: true })}
+        >
+          {hasCollapsedOutputNotice
+            ? `New output is available (${outputLines.length} line${outputLines.length === 1 ? '' : 's'}). Tap to view.`
+            : 'Output is collapsed on mobile. Tap to view run results.'}
+        </button>
+      ) : null}
 
-      {isConsoleRunnable ? (
-        <div className="border bg-slate-950 text-slate-100 p-2 min-h-32 max-h-60 overflow-auto text-sm font-mono whitespace-pre-wrap">
+      {shouldShowConsoleOutput ? (
+        <div
+          id="run-output-console"
+          ref={outputPanelRef}
+          className="max-h-72 min-h-12 overflow-auto border bg-slate-950 p-2 font-mono text-[11px] whitespace-pre-wrap text-slate-100"
+        >
           {outputLines.length === 0 ? (
             <p className="text-slate-300">Run your code to see output.</p>
           ) : (

@@ -5,6 +5,7 @@ import {
   labelsForValues,
   normalizeProfile,
 } from './profile.js'
+import { MENTOR_SNIPPET_MAX_LINES } from './mentorSnippetGuardrail.js'
 
 function toText(value) {
   if (typeof value === 'string') {
@@ -115,6 +116,10 @@ function expertiseResponseStyle(expertiseLevel) {
     return 'Respond concisely with technical precision and highlight tradeoffs or edge cases.'
   }
 
+  if (expertiseLevel === 'master') {
+    return 'Respond with high-signal technical coaching. Prioritize architecture, reliability, performance, scalability, and clear validation strategy tradeoffs.'
+  }
+
   return 'Use practical coaching language and keep guidance actionable.'
 }
 
@@ -218,7 +223,7 @@ ${toText(userQuestion)}
 
 Rules:
 - Never provide complete working code or a full-file answer.
-- If you include code, use fenced triple backticks with language and keep snippets at 6 lines max.
+- If you include code, use fenced triple backticks with language, keep each snippet at ${MENTOR_SNIPPET_MAX_LINES} lines max, and provide only minimal illustrative fragments.
 - Tailor your response to the user's current question and code context.
 - ${expertiseResponseStyle(normalizedProfile.expertiseLevel)}
 - If profile skills/interests are available, use relevant examples.

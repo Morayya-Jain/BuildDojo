@@ -36,6 +36,7 @@ import {
   markTaskIncomplete as markTaskIncompleteInDb,
   replaceProjectFiles,
   saveTasks,
+  updateProjectTitle,
   upsertUserProfile,
   upsertProjectFile,
 } from './lib/db'
@@ -47,18 +48,22 @@ import {
 } from './lib/profile'
 import {
   buildPreviewSrcDoc,
+  createStarterFileForLanguage,
   createDefaultProjectFiles,
   editorLanguageFromFile,
   fileNameFromPath,
+  findFirstFileByLanguage,
   normalizeProjectFiles,
+  runtimeLanguageFromFile,
   runtimeLanguageFromPath,
   sanitizeFilePath,
   toPersistedFiles,
 } from './lib/projectFiles'
 import {
-  nextFollowUpReplyCount,
-  shouldResetFollowUpThread,
-} from './lib/followUpGuardrail'
+  buildProjectTitleFallback,
+  getProjectDisplayTitle,
+  sanitizeProjectTitle,
+} from './lib/projectTitle'
 import { prettyLanguageName, sanitizeLanguage } from './lib/runtimeUtils'
 
 function toText(value) {
@@ -96,7 +101,12 @@ function normalizeTask(task) {
 
 function normalizeProjectSkillLevel(value) {
   const normalized = toText(value).trim().toLowerCase()
-  if (normalized === 'beginner' || normalized === 'intermediate' || normalized === 'advanced') {
+  if (
+    normalized === 'beginner' ||
+    normalized === 'intermediate' ||
+    normalized === 'advanced' ||
+    normalized === 'master'
+  ) {
     return normalized
   }
 
@@ -105,11 +115,20 @@ function normalizeProjectSkillLevel(value) {
 
 function normalizeSelectedSkillLevel(value) {
   const normalized = toText(value).trim().toLowerCase()
-  if (normalized === 'beginner' || normalized === 'intermediate' || normalized === 'advanced') {
+  if (
+    normalized === 'beginner' ||
+    normalized === 'intermediate' ||
+    normalized === 'advanced' ||
+    normalized === 'master'
+  ) {
     return normalized
   }
 
   return ''
+}
+
+function hasStoredProjectTitle(project) {
+  return toText(project?.title).trim().length > 0
 }
 
 function isProjectFilesTableMissing(error) {
@@ -140,7 +159,13 @@ function App() {
     resendConfirmation,
   } = useAuth()
 
-  const { generateRoadmap, checkUserCode, askFollowUp } = useGemini()
+  const {
+    generateRoadmap,
+    generateProjectTitle,
+    checkUserCode,
+    askFollowUp,
+    suggestFollowUpQuestions,
+  } = useGemini()
 
   const {
     user: appUser,
@@ -207,13 +232,37 @@ function App() {
   const [isMarkingTaskComplete, setIsMarkingTaskComplete] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
   const [deletingProjectId, setDeletingProjectId] = useState(null)
-  const [followUpReplyCount, setFollowUpReplyCount] = useState(0)
+  const [currentProjectTitle, setCurrentProjectTitle] = useState('')
+  const [isBackfillingProjectTitles, setIsBackfillingProjectTitles] = useState(false)
+  const [projectTitleStatusMessage, setProjectTitleStatusMessage] = useState('')
+  const [followUpSuggestions, setFollowUpSuggestions] = useState([])
+  const [isGeneratingFollowUpSuggestions, setIsGeneratingFollowUpSuggestions] =
+    useState(false)
+  const [followUpSuggestionsNotice, setFollowUpSuggestionsNotice] = useState('')
+  const [isTaskCardExpanded, setIsTaskCardExpanded] = useState(false)
   const lastCheckSignatureRef = useRef('')
   const lastCheckResultRef = useRef(null)
+  const lastCheckSuggestionsRef = useRef([])
+  const lastCheckSuggestionsNoticeRef = useRef('')
   const saveTimeoutRef = useRef(null)
   const fileNoticeTimeoutRef = useRef(null)
   const lastSavedFileContentRef = useRef({})
+  const isBackfillingProjectTitlesRef = useRef(false)
   const importInputRef = useRef(null)
+
+  const showTimedFileNotice = useCallback((message, timeoutMs = 3500) => {
+    setFileNotice(message)
+
+    if (fileNoticeTimeoutRef.current) {
+      clearTimeout(fileNoticeTimeoutRef.current)
+    }
+
+    if (timeoutMs > 0) {
+      fileNoticeTimeoutRef.current = window.setTimeout(() => {
+        setFileNotice('')
+      }, timeoutMs)
+    }
+  }, [])
 
   useEffect(() => {
     setUser(user)
@@ -232,10 +281,13 @@ function App() {
     [],
   )
 
-  const resetTaskSupportContext = useCallback(() => {
-    resetTaskSupportState()
-    setFollowUpReplyCount(0)
-  }, [resetTaskSupportState])
+  useEffect(() => {
+    if (feedbackHistory.length === 0) {
+      setFollowUpSuggestions([])
+      setFollowUpSuggestionsNotice('')
+      setIsGeneratingFollowUpSuggestions(false)
+    }
+  }, [feedbackHistory.length])
 
   const showFileLanguageNotice = useCallback((path, language) => {
     const normalizedLanguage = sanitizeLanguage(language)
@@ -243,18 +295,10 @@ function App() {
       return
     }
 
-    setFileNotice(
+    showTimedFileNotice(
       `Detected ${prettyLanguageName(normalizedLanguage)} from extension for "${path}".`,
     )
-
-    if (fileNoticeTimeoutRef.current) {
-      clearTimeout(fileNoticeTimeoutRef.current)
-    }
-
-    fileNoticeTimeoutRef.current = window.setTimeout(() => {
-      setFileNotice('')
-    }, 3500)
-  }, [])
+  }, [showTimedFileNotice])
 
   const showImportLanguageNotice = useCallback((files = []) => {
     const detectedLanguages = Array.from(
@@ -274,20 +318,95 @@ function App() {
     const languageWord = detectedLanguages.length === 1 ? 'language' : 'languages'
     const fileWord = files.length === 1 ? 'file' : 'files'
 
-    setFileNotice(`Imported ${files.length} ${fileWord}. Detected ${languageWord}: ${labels}.`)
+    showTimedFileNotice(
+      `Imported ${files.length} ${fileWord}. Detected ${languageWord}: ${labels}.`,
+    )
+  }, [showTimedFileNotice])
 
-    if (fileNoticeTimeoutRef.current) {
-      clearTimeout(fileNoticeTimeoutRef.current)
-    }
+  const backfillProjectTitles = useCallback(
+    async (projectsToBackfill, userId) => {
+      if (!userId || isBackfillingProjectTitlesRef.current) {
+        return
+      }
 
-    fileNoticeTimeoutRef.current = window.setTimeout(() => {
-      setFileNotice('')
-    }, 3500)
-  }, [])
+      const untitledProjects = (projectsToBackfill || []).filter(
+        (project) => project?.id && !hasStoredProjectTitle(project),
+      )
+
+      if (untitledProjects.length === 0) {
+        setProjectTitleStatusMessage('')
+        return
+      }
+
+      isBackfillingProjectTitlesRef.current = true
+      setIsBackfillingProjectTitles(true)
+      setProjectTitleStatusMessage('')
+
+      let failedCount = 0
+
+      try {
+        for (const project of untitledProjects) {
+          const fallbackTitle = buildProjectTitleFallback(project?.description)
+          let nextTitle = fallbackTitle
+
+          try {
+            const titleResult = await generateProjectTitle(
+              project?.description || '',
+              normalizeProjectSkillLevel(project?.skill_level),
+            )
+
+            if (titleResult.error) {
+              console.error(titleResult.error)
+            } else {
+              nextTitle = sanitizeProjectTitle(titleResult.data, project?.description)
+            }
+          } catch (error) {
+            console.error(error)
+          }
+
+          const { data, error } = await updateProjectTitle(project.id, userId, nextTitle)
+          if (error) {
+            console.error(error)
+            failedCount += 1
+            continue
+          }
+
+          const persistedTitle = sanitizeProjectTitle(
+            data?.title || nextTitle,
+            project?.description,
+          )
+
+          setProjects((prev) =>
+            prev.map((item) =>
+              item.id === project.id
+                ? { ...item, title: persistedTitle }
+                : item,
+            ),
+          )
+
+          if (currentProjectId === project.id) {
+            setCurrentProjectTitle(persistedTitle)
+          }
+        }
+      } finally {
+        isBackfillingProjectTitlesRef.current = false
+        setIsBackfillingProjectTitles(false)
+      }
+
+      if (failedCount > 0) {
+        setProjectTitleStatusMessage('Some project titles could not be saved right now.')
+        return
+      }
+
+      setProjectTitleStatusMessage('')
+    },
+    [currentProjectId, generateProjectTitle],
+  )
 
   const loadProjects = useCallback(
     async (userId) => {
       setIsLoadingProjects(true)
+      setProjectTitleStatusMessage('')
 
       const { data, error } = await getUserProjects(userId)
 
@@ -300,10 +419,18 @@ function App() {
 
       const safeProjects = data ?? []
       setProjects(safeProjects)
+      if (currentProjectId) {
+        const activeProject = safeProjects.find((project) => project.id === currentProjectId)
+        if (activeProject) {
+          setCurrentProjectTitle(getProjectDisplayTitle(activeProject))
+        }
+      }
       setIsLoadingProjects(false)
+
+      void backfillProjectTitles(safeProjects, userId)
       return { data: safeProjects, error: null }
     },
-    [setIsLoadingProjects],
+    [backfillProjectTitles, currentProjectId, setIsLoadingProjects],
   )
 
   const loadProfile = useCallback(
@@ -377,6 +504,10 @@ function App() {
       setProfile(null)
       setScreen('dashboard')
       setIsEditingProfile(false)
+      setCurrentProjectTitle('')
+      setIsBackfillingProjectTitles(false)
+      setProjectTitleStatusMessage('')
+      isBackfillingProjectTitlesRef.current = false
       resetApp()
       return
     }
@@ -409,8 +540,18 @@ function App() {
   )
 
   const bootstrapProjectFiles = useCallback(
-    async ({ projectId, ownerId, description, fallbackCode = '' }) => {
-      const defaultFiles = createDefaultProjectFiles(description, fallbackCode)
+    async ({
+      projectId,
+      ownerId,
+      description,
+      fallbackCode = '',
+      preferredRuntimeLanguage = '',
+    }) => {
+      const defaultFiles = createDefaultProjectFiles(
+        description,
+        fallbackCode,
+        preferredRuntimeLanguage,
+      )
       setFileError('')
 
       try {
@@ -515,11 +656,14 @@ function App() {
     setProjects([])
     setProfile(null)
     setIsEditingProfile(false)
+    setCurrentProjectTitle('')
+    setIsBackfillingProjectTitles(false)
+    setProjectTitleStatusMessage('')
+    isBackfillingProjectTitlesRef.current = false
     setScreen('dashboard')
     setUiError('')
     setPreviewSrcDoc('')
     setPreviewError('')
-    setFollowUpReplyCount(0)
     setAuthError(null)
   }, [resetApp, setAuthError, setProfile, signOut])
 
@@ -542,8 +686,9 @@ function App() {
     setPreviewSrcDoc('')
     setPreviewError('')
     setIsEditingProfile(false)
+    setCurrentProjectTitle('')
+    setProjectTitleStatusMessage('')
     setScreen('new-project')
-    setFollowUpReplyCount(0)
   }, [resetApp])
 
   const handleCompleteProfile = useCallback(
@@ -633,10 +778,28 @@ function App() {
 
         setSkillLevel(effectiveSkillLevel)
 
+        const fallbackProjectTitle = buildProjectTitleFallback(description)
+        let generatedProjectTitle = fallbackProjectTitle
+
+        try {
+          const titleResult = await generateProjectTitle(description, effectiveSkillLevel)
+          if (titleResult.error) {
+            console.error(titleResult.error)
+          } else {
+            generatedProjectTitle = sanitizeProjectTitle(
+              titleResult.data,
+              description,
+            )
+          }
+        } catch (error) {
+          console.error(error)
+        }
+
         const { data: projectData, error: projectError } = await createProject(
           user.id,
           description,
           effectiveSkillLevel,
+          generatedProjectTitle,
         )
 
         if (projectError || !projectData) {
@@ -660,16 +823,21 @@ function App() {
         const normalizedTasks = savedTaskData.map(normalizeTask)
 
         setCurrentProjectId(projectData.id)
+        setCurrentProjectTitle(
+          sanitizeProjectTitle(projectData.title || generatedProjectTitle, description),
+        )
         setTasks(normalizedTasks)
         setCurrentTaskIndex(0)
-        resetTaskSupportContext()
+        resetTaskSupportState()
         setPreviewSrcDoc('')
         setPreviewError('')
+        const initialTaskLanguage = sanitizeLanguage(normalizedTasks[0]?.language)
         await bootstrapProjectFiles({
           projectId: projectData.id,
           ownerId: user.id,
           description,
           fallbackCode: '',
+          preferredRuntimeLanguage: initialTaskLanguage,
         })
 
         await loadProjects(user.id)
@@ -683,14 +851,16 @@ function App() {
     },
     [
       generateRoadmap,
+      generateProjectTitle,
       bootstrapProjectFiles,
       loadProjects,
       profile,
-      resetTaskSupportContext,
+      resetTaskSupportState,
       setCurrentProjectId,
       setCurrentTaskIndex,
       setIsGeneratingRoadmap,
       setProjectDescription,
+      setCurrentProjectTitle,
       setSkillLevel,
       setTasks,
       user,
@@ -712,13 +882,15 @@ function App() {
 
         const normalizedTasks = (data ?? []).map(normalizeTask)
         const firstIncomplete = normalizedTasks.findIndex((task) => !task.completed)
+        const resolvedProjectTitle = getProjectDisplayTitle(project)
 
         setCurrentProjectId(project.id)
+        setCurrentProjectTitle(resolvedProjectTitle)
         setProjectDescription(project.description)
         setSkillLevel(normalizeProjectSkillLevel(project.skill_level))
         setTasks(normalizedTasks)
         setCurrentTaskIndex(firstIncomplete === -1 ? 0 : firstIncomplete)
-        resetTaskSupportContext()
+        resetTaskSupportState()
         setPreviewSrcDoc('')
         setPreviewError('')
         await bootstrapProjectFiles({
@@ -733,6 +905,10 @@ function App() {
         } else {
           setScreen('workspace')
         }
+
+        if (!hasStoredProjectTitle(project) && appUser?.id) {
+          void backfillProjectTitles([project], appUser.id)
+        }
       } catch (error) {
         console.error(error)
         setUiError(error.message || 'Could not continue project.')
@@ -741,10 +917,12 @@ function App() {
       }
     },
     [
-      resetTaskSupportContext,
+      resetTaskSupportState,
       appUser,
+      backfillProjectTitles,
       bootstrapProjectFiles,
       setCurrentProjectId,
+      setCurrentProjectTitle,
       setCurrentTaskIndex,
       setIsLoadingProjects,
       setProjectDescription,
@@ -791,6 +969,7 @@ function App() {
 
         if (currentProjectId === project.id) {
           resetApp()
+          setCurrentProjectTitle('')
           setScreen('dashboard')
         }
 
@@ -1233,13 +1412,33 @@ function App() {
   )
 
   const currentTask = tasks[currentTaskIndex] ?? null
+  const taskDescription = toText(currentTask?.description).trim()
+  const taskDescriptionPreview =
+    taskDescription.length > 140
+      ? `${taskDescription.slice(0, 140).trimEnd()}...`
+      : taskDescription
+  const isTaskDescriptionTruncated = taskDescriptionPreview !== taskDescription
+  const workspaceTitle = useMemo(
+    () =>
+      getProjectDisplayTitle({
+        title: currentProjectTitle,
+        description: projectDescription,
+      }),
+    [currentProjectTitle, projectDescription],
+  )
   const lockedTaskLanguage = sanitizeLanguage(currentTask?.language)
+  const activeFileLanguage = useMemo(
+    () => runtimeLanguageFromFile(activeFile),
+    [activeFile],
+  )
   const detectedLanguage = useMemo(
     () =>
-      runtimeLanguageFromPath(activeFile?.path || '') ||
-      sanitizeLanguage(activeFile?.language || '') ||
+      activeFileLanguage ||
       detectLanguage(projectDescription, userCode),
-    [activeFile?.language, activeFile?.path, projectDescription, userCode],
+    [activeFileLanguage, projectDescription, userCode],
+  )
+  const hasLockedLanguageMismatch = Boolean(
+    lockedTaskLanguage && activeFileLanguage && activeFileLanguage !== lockedTaskLanguage,
   )
   const runtimeLanguage = lockedTaskLanguage || detectedLanguage
   const editorLanguage = useMemo(
@@ -1271,9 +1470,108 @@ function App() {
   const handleSelectTask = useCallback(
     (taskIndex) => {
       setCurrentTaskIndex(taskIndex)
-      resetTaskSupportContext()
+      resetTaskSupportState()
     },
-    [resetTaskSupportContext, setCurrentTaskIndex],
+    [resetTaskSupportState, setCurrentTaskIndex],
+  )
+
+  useEffect(() => {
+    setIsTaskCardExpanded(false)
+  }, [currentProjectId])
+
+  const handleResolveTaskLanguageMismatch = useCallback(async () => {
+    if (!lockedTaskLanguage) {
+      return
+    }
+
+    setFileError('')
+
+    try {
+      const existingMatch = findFirstFileByLanguage(projectFiles, lockedTaskLanguage)
+      if (existingMatch) {
+        setActiveFileId(existingMatch.id)
+        updateUserCode(existingMatch.content || '')
+        setPreviewError('')
+        showTimedFileNotice(
+          `Switched to "${existingMatch.path}" for ${prettyLanguageName(lockedTaskLanguage)}.`,
+        )
+        return
+      }
+
+      const starterFile = createStarterFileForLanguage(lockedTaskLanguage, projectFiles)
+      if (!starterFile) {
+        setFileError(
+          `Could not create a starter file for ${prettyLanguageName(lockedTaskLanguage)}.`,
+        )
+        return
+      }
+
+      setProjectFiles((prev) => normalizeProjectFiles([...prev, starterFile]))
+      setActiveFileId(starterFile.id)
+      updateUserCode(starterFile.content || '')
+      lastSavedFileContentRef.current[starterFile.id] = starterFile.content || ''
+      setPreviewError('')
+      showTimedFileNotice(
+        `Created "${starterFile.path}" for locked ${prettyLanguageName(lockedTaskLanguage)} task.`,
+      )
+      await persistProjectFile(starterFile)
+    } catch (error) {
+      console.error(error)
+      setFileError(error.message || 'Could not align files to the task language lock.')
+    }
+  }, [
+    lockedTaskLanguage,
+    persistProjectFile,
+    projectFiles,
+    setActiveFileId,
+    setFileError,
+    setProjectFiles,
+    showTimedFileNotice,
+    updateUserCode,
+  ])
+
+  const loadFollowUpSuggestions = useCallback(
+    async (task, checkSignature, mentorFeedback) => {
+      setIsGeneratingFollowUpSuggestions(true)
+      setFollowUpSuggestionsNotice('')
+
+      try {
+        const result = await suggestFollowUpQuestions(
+          task,
+          userCode,
+          mentorFeedback,
+          skillLevel,
+          profileToPromptContext(profile),
+        )
+
+        if (result.error) {
+          const nextNotice = 'Suggested questions are unavailable right now.'
+          setFollowUpSuggestions([])
+          setFollowUpSuggestionsNotice(nextNotice)
+          lastCheckSuggestionsRef.current = []
+          lastCheckSuggestionsNoticeRef.current = nextNotice
+          return { data: null, error: result.error }
+        }
+
+        setFollowUpSuggestions(result.data)
+        setFollowUpSuggestionsNotice('')
+        lastCheckSignatureRef.current = checkSignature
+        lastCheckSuggestionsRef.current = result.data
+        lastCheckSuggestionsNoticeRef.current = ''
+        return { data: result.data, error: null }
+      } catch (error) {
+        console.error(error)
+        const nextNotice = 'Suggested questions are unavailable right now.'
+        setFollowUpSuggestions([])
+        setFollowUpSuggestionsNotice(nextNotice)
+        lastCheckSuggestionsRef.current = []
+        lastCheckSuggestionsNoticeRef.current = nextNotice
+        return { data: null, error: new Error(error.message || nextNotice) }
+      } finally {
+        setIsGeneratingFollowUpSuggestions(false)
+      }
+    },
+    [profile, skillLevel, suggestFollowUpQuestions, userCode],
   )
 
   const runCodeCheck = useCallback(async ({ useCached = true } = {}) => {
@@ -1290,13 +1588,20 @@ function App() {
     ) {
       setUiError('')
       setFeedbackHistory([{ role: 'ai', message: lastCheckResultRef.current.feedback }])
-      setFollowUpReplyCount(0)
+      setFollowUpSuggestions(lastCheckSuggestionsRef.current)
+      setFollowUpSuggestionsNotice(lastCheckSuggestionsNoticeRef.current)
+      setIsGeneratingFollowUpSuggestions(false)
       return { data: lastCheckResultRef.current, error: null }
     }
 
     setUiError('')
     setIsCheckingCode(true)
     setFeedbackHistory([])
+    setFollowUpSuggestions([])
+    setFollowUpSuggestionsNotice('')
+    setIsGeneratingFollowUpSuggestions(false)
+    lastCheckSuggestionsRef.current = []
+    lastCheckSuggestionsNoticeRef.current = ''
 
     try {
       const result = await checkUserCode(
@@ -1313,7 +1618,7 @@ function App() {
       lastCheckSignatureRef.current = checkSignature
       lastCheckResultRef.current = result.data
       setFeedbackHistory([{ role: 'ai', message: result.data.feedback }])
-      setFollowUpReplyCount(0)
+      await loadFollowUpSuggestions(currentTask, checkSignature, result.data.feedback)
       return { data: result.data, error: null }
     } catch (error) {
       console.error(error)
@@ -1326,6 +1631,7 @@ function App() {
   }, [
     checkUserCode,
     currentTask,
+    loadFollowUpSuggestions,
     profile,
     setFeedbackHistory,
     setIsCheckingCode,
@@ -1350,16 +1656,8 @@ function App() {
 
       setUiError('')
       setIsAskingFollowUp(true)
-      const shouldResetThread = shouldResetFollowUpThread(followUpReplyCount)
-      const historyBeforeQuestion = shouldResetThread ? [] : feedbackHistory
-
-      if (shouldResetThread) {
-        setFeedbackHistory([])
-        setFollowUpReplyCount(0)
-      }
-
       const updatedHistory = [
-        ...historyBeforeQuestion,
+        ...feedbackHistory,
         { role: 'user', message: normalizedQuestion },
       ]
 
@@ -1379,10 +1677,6 @@ function App() {
         }
 
         setFeedbackHistory([...updatedHistory, { role: 'ai', message: result.data }])
-        setFollowUpReplyCount(nextFollowUpReplyCount(
-          shouldResetThread ? 0 : followUpReplyCount,
-          true,
-        ))
       } catch (error) {
         console.error(error)
         setUiError(error.message || 'Follow-up request failed.')
@@ -1394,7 +1688,6 @@ function App() {
       askFollowUp,
       currentTask,
       feedbackHistory,
-      followUpReplyCount,
       profile,
       skillLevel,
       setFeedbackHistory,
@@ -1406,6 +1699,8 @@ function App() {
   useEffect(() => {
     lastCheckSignatureRef.current = ''
     lastCheckResultRef.current = null
+    lastCheckSuggestionsRef.current = []
+    lastCheckSuggestionsNoticeRef.current = ''
   }, [currentTask?.id, userCode])
 
   const handleMarkCurrentTaskComplete = useCallback(async () => {
@@ -1509,7 +1804,7 @@ function App() {
       }
 
       setCurrentTaskIndex(nextTaskIndex)
-      resetTaskSupportContext()
+      resetTaskSupportState()
     } catch (error) {
       console.error(error)
       setUiError(error.message || 'Could not complete task.')
@@ -1524,7 +1819,7 @@ function App() {
     loadProjects,
     markTaskComplete,
     markTaskIncomplete,
-    resetTaskSupportContext,
+    resetTaskSupportState,
     runCodeCheck,
     setCurrentTaskIndex,
     setFeedbackHistory,
@@ -1536,11 +1831,12 @@ function App() {
   const handleBackToDashboard = useCallback(async () => {
     resetApp()
     setIsEditingProfile(false)
+    setCurrentProjectTitle('')
     setScreen('dashboard')
     setUiError('')
     setPreviewSrcDoc('')
     setPreviewError('')
-    setFollowUpReplyCount(0)
+    setProjectTitleStatusMessage('')
 
     if (user) {
       await loadProjects(user.id)
@@ -1600,7 +1896,7 @@ function App() {
       }
 
       setCurrentTaskIndex(reopenTaskIndex)
-      resetTaskSupportContext()
+      resetTaskSupportState()
       setScreen('workspace')
     } catch (error) {
       console.error(error)
@@ -1613,7 +1909,7 @@ function App() {
     isMarkingTaskComplete,
     markTaskComplete,
     markTaskIncomplete,
-    resetTaskSupportContext,
+    resetTaskSupportState,
     setCurrentTaskIndex,
     tasks,
   ])
@@ -1664,6 +1960,8 @@ function App() {
         projects={projects}
         isLoadingProjects={isLoadingProjects}
         deletingProjectId={deletingProjectId}
+        isBackfillingProjectTitles={isBackfillingProjectTitles}
+        projectTitleStatusMessage={projectTitleStatusMessage}
         onStartNewProject={handleStartNewProject}
         onEditProfile={handleEditProfile}
         onContinueProject={handleContinueProject}
@@ -1681,6 +1979,8 @@ function App() {
         projects={projects}
         isLoadingProjects={isLoadingProjects}
         deletingProjectId={deletingProjectId}
+        isBackfillingProjectTitles={isBackfillingProjectTitles}
+        projectTitleStatusMessage={projectTitleStatusMessage}
         onContinueProject={handleContinueProject}
         onDeleteProject={handleDeleteProject}
         onLogOut={handleLogOut}
@@ -1720,12 +2020,14 @@ function App() {
     fileNotice
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-svh bg-slate-50">
       <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <img src={workspaceLogo} alt="DojoBuild" className="h-8 w-8 object-contain" />
-            <h1 className="text-3xl font-semibold text-slate-900 md:text-4xl">Dojo Workspace</h1>
+            <h1 className="text-xl font-semibold text-slate-900 md:text-2xl">
+              {workspaceTitle}
+            </h1>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -1790,7 +2092,7 @@ function App() {
       ) : null}
 
       <section className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-        <aside className="border-b border-slate-200 bg-white p-4 xl:min-h-[calc(100vh-150px)] xl:border-b-0 xl:border-r">
+        <aside className="border-b border-slate-200 bg-white p-4 xl:min-h-[calc(100svh-150px)] xl:border-b-0 xl:border-r">
           <FileTree
             files={projectFiles}
             activeFileId={activeFile?.id || null}
@@ -1812,26 +2114,6 @@ function App() {
         </aside>
 
         <div className="flex min-w-0 flex-col gap-3 border-b border-slate-200 bg-white p-3 md:p-4 xl:border-b-0 xl:border-r">
-          <section className="rounded-xl border border-slate-300 bg-slate-50 p-4">
-            <h2 className="text-xl font-semibold text-slate-900">
-              Task {currentTaskIndex + 1}: {currentTask?.title}
-            </h2>
-            <p className="mt-2 text-slate-700">{currentTask?.description}</p>
-            <button
-              type="button"
-              className={`${buttonPrimary} ${sizeSm} mt-3 rounded-lg border-emerald-600 bg-emerald-500 hover:border-emerald-500 hover:bg-emerald-400`}
-              onClick={handleMarkCurrentTaskComplete}
-              disabled={
-                !currentTask ||
-                isCheckingCode ||
-                isCheckingBeforeComplete ||
-                isMarkingTaskComplete
-              }
-            >
-              {markAsCompleteLabel}
-            </button>
-          </section>
-
           <Editor
             projectDescription={projectDescription}
             value={activeFile?.content || ''}
@@ -1847,7 +2129,10 @@ function App() {
             key={currentTask?.id || 'run-console'}
             code={userCode}
             detectedLanguage={detectedLanguage}
+            fileLanguage={activeFileLanguage}
             lockedLanguage={lockedTaskLanguage}
+            hasLockedLanguageMismatch={hasLockedLanguageMismatch}
+            onResolveLockedLanguageMismatch={handleResolveTaskLanguageMismatch}
             onRunPreview={handleRunPreview}
           />
           {showHtmlPreview ? (
@@ -1867,8 +2152,57 @@ function App() {
           ) : null}
         </div>
 
-        <aside className="bg-white p-4 xl:min-h-[calc(100vh-150px)]">
+        <aside className="bg-white p-4 xl:min-h-[calc(100svh-150px)]">
           <div className="flex flex-col gap-4">
+            <section className="rounded-xl border border-slate-300 bg-slate-50 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Task {currentTaskIndex + 1}
+                  </p>
+                  <h2 className="truncate text-base font-semibold text-slate-900">
+                    {currentTask?.title || 'No task selected'}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                  onClick={() => setIsTaskCardExpanded((prev) => !prev)}
+                  aria-expanded={isTaskCardExpanded}
+                  aria-label={isTaskCardExpanded ? 'Collapse task details' : 'Expand task details'}
+                >
+                  {isTaskCardExpanded ? '-' : '+'}
+                </button>
+              </div>
+
+              {isTaskCardExpanded ? (
+                <p className="mt-2 text-sm text-slate-700">
+                  {taskDescription || 'Task details appear here.'}
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-slate-600">
+                  {taskDescriptionPreview || 'Task details appear here.'}
+                </p>
+              )}
+              {!isTaskCardExpanded && isTaskDescriptionTruncated ? (
+                <p className="mt-1 text-xs text-slate-500">Tap + to view full task details.</p>
+              ) : null}
+
+              <button
+                type="button"
+                className={`${buttonPrimary} mt-2 w-full rounded-md border-emerald-600 bg-emerald-500 px-3 py-1.5 text-xs hover:border-emerald-500 hover:bg-emerald-400`}
+                onClick={handleMarkCurrentTaskComplete}
+                disabled={
+                  !currentTask ||
+                  isCheckingCode ||
+                  isCheckingBeforeComplete ||
+                  isMarkingTaskComplete
+                }
+              >
+                {markAsCompleteLabel}
+              </button>
+            </section>
+
             <HintBox
               task={currentTask}
               hintsUsed={hintsUsed}
@@ -1881,6 +2215,9 @@ function App() {
               feedbackHistory={feedbackHistory}
               isCheckingCode={isCheckingCode}
               isAskingFollowUp={isAskingFollowUp}
+              followUpSuggestions={followUpSuggestions}
+              isGeneratingFollowUpSuggestions={isGeneratingFollowUpSuggestions}
+              followUpSuggestionsNotice={followUpSuggestionsNotice}
               onCheckCode={handleCheckCode}
               onAskFollowUp={handleFollowUp}
               errorMessage={uiError}

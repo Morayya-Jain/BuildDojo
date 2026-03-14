@@ -71,6 +71,7 @@ test('buildFollowUpPrompt includes foundation-first structure and guardrails', (
   assert.match(prompt, /Why it matters:/)
   assert.match(prompt, /Try this tiny next step:/)
   assert.match(prompt, /Never provide complete working code/)
+  assert.match(prompt, /keep each snippet at 6 lines max/i)
   assert.match(prompt, /Target 120-180 words/)
 })
 
@@ -89,6 +90,25 @@ test('buildFollowUpPrompt can keep foundation-first mode off for advanced contex
 
   assert.match(prompt, /Foundation-first mode is OFF/)
   assert.match(prompt, /Use this structure:\nAnswer:\nTry this next step:/)
+})
+
+test('buildFollowUpPrompt uses master-specific response style guidance', () => {
+  const prompt = buildFollowUpPrompt({
+    task: {
+      title: 'Scale job processing',
+      description: 'Improve throughput and reliability under heavy load',
+      language: 'typescript',
+    },
+    userCode: 'const queue = []',
+    userQuestion: 'How should I approach this architecture change?',
+    feedbackHistory: [{ role: 'ai', message: 'Good baseline implementation.' }],
+    skillLevel: 'master',
+    profileContext: { expertiseLevel: 'master' },
+  })
+
+  assert.match(prompt, /high-signal technical coaching/i)
+  assert.match(prompt, /architecture, reliability, performance, scalability/i)
+  assert.match(prompt, /validation strategy/i)
 })
 
 test('buildFollowUpPrompt enables casual mode for short greetings', () => {

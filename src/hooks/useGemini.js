@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { buildFollowUpPrompt } from '../lib/followUpMentor.js'
+import { MENTOR_SNIPPET_MAX_LINES } from '../lib/mentorSnippetGuardrail.js'
 import {
   INTEREST_OPTIONS,
   SKILL_OPTIONS,
@@ -7,6 +8,7 @@ import {
   labelsForValues,
   normalizeProfile,
 } from '../lib/profile.js'
+import { sanitizeProjectTitle } from '../lib/projectTitle.js'
 import { sanitizeLanguage } from '../lib/runtimeUtils.js'
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models'
@@ -15,7 +17,30 @@ const GEMINI_MODEL_PRO = 'gemini-2.5-pro'
 const TIMEOUT_MS = 15000
 const GEMINI_API_KEY = import.meta.env?.VITE_GEMINI_API_KEY?.trim()
 const DEFAULT_PROJECT_SKILL_LEVEL = 'intermediate'
-const PROJECT_SKILL_LEVELS = new Set(['beginner', 'intermediate', 'advanced'])
+const PROJECT_SKILL_LEVELS = new Set(['beginner', 'intermediate', 'advanced', 'master'])
+const FOLLOW_UP_SUGGESTION_COUNT = 2
+const CODE_CHECK_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    status: { type: 'STRING', enum: ['PASS', 'FAIL'] },
+    feedback: { type: 'STRING' },
+    outputMatch: { type: 'BOOLEAN' },
+    outputReason: { type: 'STRING' },
+  },
+  required: ['status', 'feedback', 'outputMatch', 'outputReason'],
+}
+const FOLLOW_UP_SUGGESTIONS_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    suggestions: {
+      type: 'ARRAY',
+      items: { type: 'STRING' },
+      minItems: FOLLOW_UP_SUGGESTION_COUNT,
+      maxItems: FOLLOW_UP_SUGGESTION_COUNT,
+    },
+  },
+  required: ['suggestions'],
+}
 const DEFAULT_CLARIFYING_ANSWERS = {
   skillLevelPreference: 'beginner',
   experience: 'Not specified.',
@@ -67,6 +92,131 @@ function cleanJsonString(text) {
   return text.replace(/```json/gi, '').replace(/```/g, '').trim()
 }
 
+function parseJsonObjectCandidate(text) {
+  const cleaned = cleanJsonString(text)
+  const candidates = []
+
+  if (cleaned) {
+    candidates.push(cleaned)
+    candidates.push(cleaned.replace(/,\s*([}\]])/g, '$1'))
+  }
+
+  const firstBrace = cleaned.indexOf('{')
+  const lastBrace = cleaned.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const sliced = cleaned.slice(firstBrace, lastBrace + 1)
+    candidates.push(sliced)
+    candidates.push(sliced.replace(/,\s*([}\]])/g, '$1'))
+  }
+
+  const uniqueCandidates = Array.from(
+    new Set(candidates.map((entry) => entry.trim()).filter(Boolean)),
+  )
+
+  let lastError = null
+  for (const candidate of uniqueCandidates) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  if (lastError) {
+    throw lastError
+  }
+
+  throw new Error('No JSON object found.')
+}
+
+function normalizeLooseJsonString(value) {
+  return toText(value)
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+    .trim()
+}
+
+function normalizeFollowUpSuggestion(value, maxChars = 96) {
+  let text = toText(value)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[-*]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .replace(/^(question|suggestion)\s*\d*\s*:\s*/i, '')
+    .replace(/^["'`]+/, '')
+    .replace(/["'`]+$/, '')
+    .trim()
+
+  text = text
+    .replace(/\s+\?/g, '?')
+    .replace(/\s+([,.;:!])/g, '$1')
+    .trim()
+
+  if (/no code was provided for evaluation/i.test(text)) {
+    return 'What should I implement first so this task can be evaluated?'
+  }
+
+  if (!text || !/[a-z0-9]/i.test(text)) {
+    return ''
+  }
+
+  if (text.length > maxChars) {
+    const slice = text.slice(0, maxChars)
+    const lastSpace = slice.lastIndexOf(' ')
+    const shortened = (lastSpace > 40 ? slice.slice(0, lastSpace) : slice).trim()
+    text = `${shortened}...`
+  }
+
+  if (!/[?]$/.test(text)) {
+    text = `${text.replace(/[.!]+$/, '').trim()}?`
+  }
+
+  return text
+}
+
+function compactText(value, maxChars = 240) {
+  const normalized = toText(value).replace(/\s+/g, ' ').trim()
+  if (!normalized) {
+    return ''
+  }
+
+  if (normalized.length <= maxChars) {
+    return normalized
+  }
+
+  return `${normalized.slice(0, maxChars).trim()}...`
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+function isRetryableStatus(status) {
+  return status === 429 || status >= 500
+}
+
+function isRetryableError(error) {
+  if (!error) {
+    return false
+  }
+
+  if (error.name === 'AbortError') {
+    return true
+  }
+
+  const message = toText(error.message).toLowerCase()
+  return /rate limit|429|timeout|temporar|unavailable|internal|try again/i.test(message)
+}
+
 function toText(value) {
   if (typeof value === 'string') {
     return value
@@ -104,6 +254,10 @@ function expertiseResponseStyle(expertiseLevel) {
     return 'Be concise and technical, focus on tradeoffs, edge cases, and advanced execution detail.'
   }
 
+  if (expertiseLevel === 'master') {
+    return 'Be highly concise and technical. Prioritize architecture, performance, reliability, scalability, validation strategy, and explicit tradeoffs.'
+  }
+
   return 'Use balanced coaching with clear, practical guidance.'
 }
 
@@ -125,8 +279,7 @@ Personalization rules:
 }
 
 function parseCodeCheckResult(text) {
-  const cleaned = cleanJsonString(text)
-  const parsed = JSON.parse(cleaned)
+  const parsed = parseJsonObjectCandidate(text)
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Code check response is not a JSON object.')
@@ -157,6 +310,138 @@ function parseCodeCheckResult(text) {
   }
 }
 
+export function parseFollowUpSuggestionsResult(text) {
+  const parsed = parseJsonObjectCandidate(text)
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Follow-up suggestions response is not a JSON object.')
+  }
+
+  if (!Array.isArray(parsed.suggestions)) {
+    throw new Error('Follow-up suggestions response must include a suggestions array.')
+  }
+
+  if (parsed.suggestions.length !== FOLLOW_UP_SUGGESTION_COUNT) {
+    throw new Error(
+      `Follow-up suggestions response must include exactly ${FOLLOW_UP_SUGGESTION_COUNT} suggestions.`,
+    )
+  }
+
+  const normalizedSuggestions = parsed.suggestions.map((entry) =>
+    normalizeFollowUpSuggestion(entry),
+  )
+  if (normalizedSuggestions.some((entry) => entry.length === 0)) {
+    throw new Error('Follow-up suggestions response must include non-empty strings.')
+  }
+
+  const uniqueCount = new Set(
+    normalizedSuggestions.map((entry) => entry.toLowerCase()),
+  ).size
+  if (uniqueCount !== FOLLOW_UP_SUGGESTION_COUNT) {
+    throw new Error('Follow-up suggestions response must include unique suggestions.')
+  }
+
+  return normalizedSuggestions
+}
+
+export function parseCodeCheckResultLenient(text) {
+  const source = cleanJsonString(text)
+
+  const statusMatch =
+    source.match(/"status"\s*:\s*"(PASS|FAIL)"/i) ||
+    source.match(/\b(PASS|FAIL)\b/i)
+  const outputMatchMatch = source.match(/"outputMatch"\s*:\s*(true|false)/i)
+  const feedbackMatch =
+    source.match(/"feedback"\s*:\s*"([\s\S]*?)"\s*,\s*"outputMatch"/i) ||
+    source.match(/"feedback"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/i)
+  const outputReasonMatch =
+    source.match(/"outputReason"\s*:\s*"([\s\S]*?)"\s*(?:,|\})/i)
+
+  const status = toText(statusMatch?.[1]).trim().toUpperCase()
+  const feedback = normalizeLooseJsonString(feedbackMatch?.[1] || '')
+
+  if ((status !== 'PASS' && status !== 'FAIL') || !feedback) {
+    throw new Error('Code check response was malformed and could not be recovered.')
+  }
+
+  return {
+    status,
+    feedback,
+    outputMatch: toText(outputMatchMatch?.[1]).trim().toLowerCase() === 'true',
+    outputReason: normalizeLooseJsonString(outputReasonMatch?.[1] || ''),
+  }
+}
+
+export function parseFollowUpSuggestionsResultLenient(text) {
+  const source = cleanJsonString(text)
+  const candidates = []
+
+  for (const line of source.split('\n')) {
+    const normalizedLine = line
+      .trim()
+      .replace(/^[-*]\s+/, '')
+      .replace(/^\d+[.)]\s+/, '')
+      .replace(/^["']/, '')
+      .replace(/["']$/, '')
+      .trim()
+
+    if (!normalizedLine) {
+      continue
+    }
+
+    candidates.push(normalizedLine)
+  }
+
+  const questionMatches = source.match(/[^?\n]{6,220}\?/g) || []
+  candidates.push(...questionMatches)
+
+  const normalized = []
+  const seen = new Set()
+  for (const entry of candidates) {
+    const collapsed = normalizeFollowUpSuggestion(entry)
+    if (collapsed.length < 8) {
+      continue
+    }
+    const question = collapsed
+
+    const key = question.toLowerCase()
+    if (seen.has(key)) {
+      continue
+    }
+
+    seen.add(key)
+    normalized.push(question)
+    if (normalized.length === FOLLOW_UP_SUGGESTION_COUNT) {
+      break
+    }
+  }
+
+  if (normalized.length !== FOLLOW_UP_SUGGESTION_COUNT) {
+    throw new Error('Follow-up suggestions response was malformed and could not be recovered.')
+  }
+
+  return normalized
+}
+
+function buildFallbackFollowUpSuggestions(task, mentorFeedback) {
+  const normalizedFeedback = toText(mentorFeedback).toLowerCase()
+  const noCodeDetected = /no code was provided|empty submission|no submission|missing code/i.test(
+    normalizedFeedback,
+  )
+
+  const baseSuggestions = noCodeDetected
+    ? [
+        'What should I implement first so this task can be evaluated?',
+        'Can you give me a tiny first step to start this task?',
+      ]
+    : [
+        'Which one fix should I make first?',
+        'How can I quickly verify that fix before checking again?',
+      ]
+
+  return baseSuggestions.map((entry) => normalizeFollowUpSuggestion(entry))
+}
+
 function normalizeProjectSkillLevel(value) {
   const normalized = toText(value).trim().toLowerCase()
   if (PROJECT_SKILL_LEVELS.has(normalized)) {
@@ -169,7 +454,7 @@ function normalizeProjectSkillLevel(value) {
 function normalizeModelSkillLevel(value) {
   const normalized = toText(value).trim().toLowerCase()
 
-  if (normalized === 'hard' || normalized === 'master') {
+  if (normalized === 'hard') {
     return 'advanced'
   }
 
@@ -180,9 +465,9 @@ function normalizeModelSkillLevel(value) {
   return ''
 }
 
-function selectGeminiModel(skillLevel) {
+export function selectGeminiModel(skillLevel) {
   const normalizedSkillLevel = normalizeModelSkillLevel(skillLevel)
-  if (normalizedSkillLevel === 'advanced') {
+  if (normalizedSkillLevel === 'advanced' || normalizedSkillLevel === 'master') {
     return GEMINI_MODEL_PRO
   }
 
@@ -264,8 +549,7 @@ export function normalizeClarifyingAnswers(clarifyingAnswers) {
 }
 
 export function parseRoadmapGenerationResult(text) {
-  const cleaned = cleanJsonString(text)
-  const parsed = JSON.parse(cleaned)
+  const parsed = parseJsonObjectCandidate(text)
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Roadmap response is not a JSON object.')
@@ -290,6 +574,9 @@ async function callGemini(prompt, options = {}) {
     temperature = 0.5,
     maxOutputTokens = 256,
     model = GEMINI_MODEL_FLASH,
+    responseMimeType = null,
+    responseSchema = null,
+    retryCount = 0,
   } = options
 
   if (!GEMINI_API_KEY) {
@@ -301,64 +588,87 @@ async function callGemini(prompt, options = {}) {
     }
   }
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
-
-  try {
-    const response = await fetch(
-      `${GEMINI_BASE_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: prompt }],
-            },
-          ],
-          generationConfig: {
-            temperature,
-            maxOutputTokens,
-          },
-        }),
-        signal: controller.signal,
-      },
-    )
-
-    if (!response.ok) {
-      let message = `Gemini request failed (${response.status})`
-      try {
-        const errorData = await response.json()
-        const apiMessage = errorData?.error?.message
-        if (apiMessage) {
-          message = apiMessage
-        }
-      } catch {
-        // Ignore JSON parse issues for error body.
-      }
-      throw new Error(message)
-    }
-
-    const data = await response.json()
-    const text = getGeminiText(data)
-
-    if (!text) {
-      throw new Error('Gemini returned an empty response.')
-    }
-
-    return { data: text, error: null }
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      return {
-        data: null,
-        error: new Error('Request timed out after 15 seconds. Please try again.'),
-      }
-    }
-
-    return { data: null, error }
-  } finally {
-    clearTimeout(timeout)
+  const maxAttempts = Math.max(1, retryCount + 1)
+  const generationConfig = {
+    temperature,
+    maxOutputTokens,
+    ...(responseMimeType ? { responseMimeType } : {}),
+    ...(responseSchema ? { responseSchema } : {}),
   }
+
+  let lastError = null
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
+    try {
+      const response = await fetch(
+        `${GEMINI_BASE_URL}/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }],
+              },
+            ],
+            generationConfig,
+          }),
+          signal: controller.signal,
+        },
+      )
+
+      if (!response.ok) {
+        let message = `Gemini request failed (${response.status})`
+        try {
+          const errorData = await response.json()
+          const apiMessage = errorData?.error?.message
+          if (apiMessage) {
+            message = apiMessage
+          }
+        } catch {
+          // Ignore JSON parse issues for error body.
+        }
+
+        const responseError = new Error(message)
+        if (attempt < maxAttempts - 1 && isRetryableStatus(response.status)) {
+          await sleep(300 * (attempt + 1))
+          continue
+        }
+
+        throw responseError
+      }
+
+      const data = await response.json()
+      const text = getGeminiText(data)
+
+      if (!text) {
+        throw new Error('Gemini returned an empty response.')
+      }
+
+      return { data: text, error: null }
+    } catch (error) {
+      lastError = error
+
+      if (attempt < maxAttempts - 1 && isRetryableError(error)) {
+        await sleep(300 * (attempt + 1))
+        continue
+      }
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  if (lastError?.name === 'AbortError') {
+    return {
+      data: null,
+      error: new Error('Request timed out after 15 seconds. Please try again.'),
+    }
+  }
+
+  return { data: null, error: lastError || new Error('Gemini request failed.') }
 }
 
 export function buildRoadmapPrompt(projectDescription, clarifyingAnswers, profileContext = null) {
@@ -377,7 +687,7 @@ Initial clarifying answers:
 ${profileBlock}
 
 Infer the project skill level from the user project context.
-Allowed skill levels: beginner, intermediate, advanced.
+Allowed skill levels: beginner, intermediate, advanced, master.
 Use selected skill level preference as the target skillLevel unless it clearly conflicts with project scope.
 Always tailor the roadmap tasks intelligently based on project complexity and clarifying context.
 
@@ -393,12 +703,94 @@ Special Stage 1 requirement:
 Return ONLY a valid raw JSON object. No markdown, no backticks, no explanation.
 Schema:
 {
-  "skillLevel": "beginner|intermediate|advanced",
+  "skillLevel": "beginner|intermediate|advanced|master",
   "tasks": [{ "id", "title", "description", "hint", "exampleOutput", "language" }]
 }
 The language field must be one of: javascript, typescript, python, html, sql, java, csharp, go, rust, ruby, php, swift, kotlin.
 Use language only as a task-level lock when clearly appropriate.
 The exampleOutput field may contain code as it is shown only when explicitly requested.`
+}
+
+export function buildProjectTitlePrompt(projectDescription) {
+  return `You create concise titles for coding projects.
+
+Project description:
+${toText(projectDescription)}
+
+Rules:
+- Return a plain-text title only.
+- Use 3 to 7 words.
+- No markdown, no quotes, no numbering, no punctuation-only output.
+- No code snippets.
+- Keep it specific to the project goal.
+
+Return ONLY the title text.`
+}
+
+export function buildCodeCheckPrompt(task, userCode, profileContext = null) {
+  const exampleOutput = toText(task?.exampleOutput ?? '').trim()
+  const profileBlock = buildProfilePromptBlock(profileContext)
+
+  return `You are a strict coding mentor and code evaluator.
+Evaluate whether the user's code satisfies the current task and expected output.
+
+Task title: ${toText(task?.title)}
+Task description: ${toText(task?.description)}
+Expected example output (may be empty): ${exampleOutput || 'N/A'}
+${profileBlock}
+
+User code:
+${userCode}
+
+Rules:
+- Never provide complete working code or a full-file answer.
+- If you include code, keep each snippet at ${MENTOR_SNIPPET_MAX_LINES} lines max and only include minimal illustrative fragments.
+- Be specific and concise.
+- If expected example output is provided, check if behavior/output aligns with it.
+- If expected example output is not provided, set outputMatch to true and explain that in outputReason.
+- Return status PASS only when task requirements are satisfied.
+- Return status FAIL if anything required is missing or incorrect.
+
+Return ONLY raw JSON with this exact schema:
+{"status":"PASS|FAIL","feedback":"string","outputMatch":true|false,"outputReason":"string"}
+No markdown. No extra keys.`
+}
+
+export function buildFollowUpSuggestionsPrompt(
+  task,
+  userCode,
+  mentorFeedback,
+  profileContext = null,
+) {
+  const normalizedProfile = normalizeProfile(profileContext)
+  const expertise = expertiseLabel(normalizedProfile.expertiseLevel)
+  const taskTitle = compactText(task?.title, 120) || 'Current task'
+  const taskDescription = compactText(task?.description, 280) || 'No description provided.'
+  const feedbackSummary = compactText(mentorFeedback, 800)
+  const codeExcerpt = compactText(userCode, 280)
+
+  return `You are a coding mentor helping a learner ask strong follow-up questions.
+
+Task title: ${taskTitle}
+Task description: ${taskDescription}
+Task language: ${toText(task?.language) || 'unspecified'}
+Learner expertise: ${expertise}
+Mentor feedback from the latest code check:
+${feedbackSummary}
+
+Current code excerpt (truncated):
+${codeExcerpt || 'N/A'}
+
+Rules:
+- Generate exactly ${FOLLOW_UP_SUGGESTION_COUNT} concise follow-up questions.
+- Keep each suggestion beginner-friendly and focused on the mentor feedback above.
+- Each suggestion must be a single question the learner can ask next.
+- Never provide complete working code or a full-file answer.
+- Do not include explanations, numbering, or markdown.
+
+Return ONLY raw JSON with this exact schema:
+{"suggestions":["question 1","question 2"]}
+No markdown. No extra keys.`
 }
 
 export function useGemini() {
@@ -448,38 +840,38 @@ export function useGemini() {
     }
   }, [])
 
+  const generateProjectTitle = useCallback(async (projectDescription, skillLevel = '') => {
+    const prompt = buildProjectTitlePrompt(projectDescription)
+    const model = selectGeminiModel(skillLevel)
+
+    const result = await callGemini(prompt, {
+      temperature: 0.3,
+      maxOutputTokens: 48,
+      model,
+    })
+
+    if (result.error) {
+      return { data: null, error: result.error }
+    }
+
+    return {
+      data: sanitizeProjectTitle(result.data, projectDescription),
+      error: null,
+    }
+  }, [])
+
   const checkUserCode = useCallback(
     async (task, userCode, profileContext = null, skillLevel = '') => {
-      const exampleOutput = toText(task?.exampleOutput ?? '').trim()
-      const profileBlock = buildProfilePromptBlock(profileContext)
       const model = selectGeminiModel(skillLevel)
-      const prompt = `You are a strict coding mentor and code evaluator.
-Evaluate whether the user's code satisfies the current task and expected output.
-
-Task title: ${toText(task?.title)}
-Task description: ${toText(task?.description)}
-Expected example output (may be empty): ${exampleOutput || 'N/A'}
-${profileBlock}
-
-User code:
-${userCode}
-
-Rules:
-- Never provide complete working code.
-- Be specific and concise.
-- If expected example output is provided, check if behavior/output aligns with it.
-- If expected example output is not provided, set outputMatch to true and explain that in outputReason.
-- Return status PASS only when task requirements are satisfied.
-- Return status FAIL if anything required is missing or incorrect.
-
-Return ONLY raw JSON with this exact schema:
-{"status":"PASS|FAIL","feedback":"string","outputMatch":true|false,"outputReason":"string"}
-No markdown. No extra keys.`
+      const prompt = buildCodeCheckPrompt(task, userCode, profileContext)
 
       const firstAttempt = await callGemini(prompt, {
         temperature: 0.2,
         maxOutputTokens: 260,
         model,
+        responseMimeType: 'application/json',
+        responseSchema: CODE_CHECK_RESPONSE_SCHEMA,
+        retryCount: 1,
       })
       if (firstAttempt.error) {
         return { data: null, error: firstAttempt.error }
@@ -489,11 +881,21 @@ No markdown. No extra keys.`
         const parsed = parseCodeCheckResult(firstAttempt.data)
         return { data: parsed, error: null }
       } catch {
+        try {
+          const parsed = parseCodeCheckResultLenient(firstAttempt.data)
+          return { data: parsed, error: null }
+        } catch {
+          // Continue to strict retry before failing.
+        }
+
         const retryPrompt = `${prompt}\nYou must return only raw JSON matching the schema exactly.`
         const secondAttempt = await callGemini(retryPrompt, {
           temperature: 0.2,
           maxOutputTokens: 260,
           model,
+          responseMimeType: 'application/json',
+          responseSchema: CODE_CHECK_RESPONSE_SCHEMA,
+          retryCount: 1,
         })
 
         if (secondAttempt.error) {
@@ -504,11 +906,16 @@ No markdown. No extra keys.`
           const parsed = parseCodeCheckResult(secondAttempt.data)
           return { data: parsed, error: null }
         } catch (error) {
-          return {
-            data: null,
-            error: new Error(
-              `Could not parse code check JSON after retry: ${error.message}`,
-            ),
+          try {
+            const parsed = parseCodeCheckResultLenient(secondAttempt.data)
+            return { data: parsed, error: null }
+          } catch {
+            return {
+              data: null,
+              error: new Error(
+                `Could not parse code check JSON after retry: ${error.message}`,
+              ),
+            }
           }
         }
       }
@@ -549,9 +956,85 @@ No markdown. No extra keys.`
     [],
   )
 
+  const suggestFollowUpQuestions = useCallback(
+    async (
+      task,
+      userCode,
+      mentorFeedback,
+      skillLevel,
+      profileContext = null,
+    ) => {
+      const prompt = buildFollowUpSuggestionsPrompt(
+        task,
+        userCode,
+        mentorFeedback,
+        profileContext,
+      )
+      const model = selectGeminiModel(skillLevel)
+      const fallbackSuggestions = buildFallbackFollowUpSuggestions(task, mentorFeedback)
+
+      const firstAttempt = await callGemini(prompt, {
+        temperature: 0.2,
+        maxOutputTokens: 140,
+        model,
+        responseMimeType: 'application/json',
+        responseSchema: FOLLOW_UP_SUGGESTIONS_RESPONSE_SCHEMA,
+        retryCount: 2,
+      })
+      if (firstAttempt.error) {
+        return { data: fallbackSuggestions, error: null }
+      }
+
+      try {
+        const parsed = parseFollowUpSuggestionsResult(firstAttempt.data)
+        return { data: parsed, error: null }
+      } catch {
+        try {
+          const parsed = parseFollowUpSuggestionsResultLenient(firstAttempt.data)
+          return { data: parsed, error: null }
+        } catch {
+          // Continue to strict retry before failing.
+        }
+
+        const retryPrompt = `${prompt}\nYou must return only raw JSON matching the schema exactly.`
+        const secondAttempt = await callGemini(retryPrompt, {
+          temperature: 0.2,
+          maxOutputTokens: 140,
+          model,
+          responseMimeType: 'application/json',
+          responseSchema: FOLLOW_UP_SUGGESTIONS_RESPONSE_SCHEMA,
+          retryCount: 2,
+        })
+
+        if (secondAttempt.error) {
+          return { data: fallbackSuggestions, error: null }
+        }
+
+        try {
+          const parsed = parseFollowUpSuggestionsResult(secondAttempt.data)
+          return { data: parsed, error: null }
+        } catch (error) {
+          try {
+            const parsed = parseFollowUpSuggestionsResultLenient(secondAttempt.data)
+            return { data: parsed, error: null }
+          } catch {
+            console.error(
+              'Could not parse follow-up suggestions after retry, using fallback suggestions.',
+              error,
+            )
+            return { data: fallbackSuggestions, error: null }
+          }
+        }
+      }
+    },
+    [],
+  )
+
   return {
     generateRoadmap,
+    generateProjectTitle,
     checkUserCode,
     askFollowUp,
+    suggestFollowUpQuestions,
   }
 }

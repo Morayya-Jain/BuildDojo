@@ -5,11 +5,13 @@ import {
   getStarterTemplate,
   STARTER_PROMPT_CARDS,
 } from '../lib/homeFlow'
+import { getProjectDisplayTitle } from '../lib/projectTitle'
 
 const SKILL_LEVEL_CHIPS = [
   { id: 'beginner', label: 'Beginner', value: 'beginner' },
   { id: 'intermediate', label: 'Intermediate', value: 'intermediate' },
   { id: 'advanced', label: 'Advanced', value: 'advanced' },
+  { id: 'master', label: 'Master', value: 'master' },
 ]
 
 function mapSkillChipToPreference(chipId) {
@@ -127,6 +129,8 @@ function Onboarding({
   projects = [],
   isLoadingProjects = false,
   deletingProjectId = null,
+  isBackfillingProjectTitles = false,
+  projectTitleStatusMessage = '',
   onContinueProject = () => {},
   onDeleteProject = () => {},
   onLogOut = () => {},
@@ -204,7 +208,7 @@ function Onboarding({
   }
 
   const projectPreview = (project) => {
-    const text = project?.description || 'Untitled project'
+    const text = getProjectDisplayTitle(project)
     return text.length > 34 ? `${text.slice(0, 34)}...` : text
   }
 
@@ -279,7 +283,7 @@ function Onboarding({
                       className="flex h-11 min-w-0 flex-1 items-center justify-start gap-2 rounded-xl border border-transparent px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                       onClick={() => onContinueProject(project)}
                       disabled={isGeneratingRoadmap || isDeletingProject}
-                      title={project.description}
+                      title={getProjectDisplayTitle(project)}
                     >
                       <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-500">
                         <ProjectListIcon index={index} />
@@ -298,6 +302,14 @@ function Onboarding({
                   </div>
                 ))
               )}
+
+              {isBackfillingProjectTitles ? (
+                <p className="px-2 text-xs text-slate-500">Updating project titles...</p>
+              ) : null}
+
+              {projectTitleStatusMessage ? (
+                <p className="px-2 text-xs text-red-600">{projectTitleStatusMessage}</p>
+              ) : null}
             </div>
           </div>
 

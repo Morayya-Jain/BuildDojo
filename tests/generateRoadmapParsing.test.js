@@ -1,9 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  buildCodeCheckPrompt,
+  buildProjectTitlePrompt,
   buildRoadmapPrompt,
   normalizeClarifyingAnswers,
   parseRoadmapGenerationResult,
+  selectGeminiModel,
 } from '../src/hooks/useGemini.js'
 
 function buildTask(index) {
@@ -32,6 +35,10 @@ test('normalizeClarifyingAnswers keeps valid skill preference and normalizes inv
     'advanced',
   )
   assert.equal(
+    normalizeClarifyingAnswers({ skillLevelPreference: 'Master' }).skillLevelPreference,
+    'master',
+  )
+  assert.equal(
     normalizeClarifyingAnswers({ skillLevelPreference: 'guru' }).skillLevelPreference,
     'beginner',
   )
@@ -47,6 +54,16 @@ test('parseRoadmapGenerationResult parses a valid roadmap payload', () => {
   assert.equal(parsed.skillLevel, 'advanced')
   assert.equal(parsed.tasks.length, 6)
   assert.equal(parsed.tasks[0].task_index, 0)
+})
+
+test('parseRoadmapGenerationResult preserves master skill level', () => {
+  const input = JSON.stringify({
+    skillLevel: 'master',
+    tasks: Array.from({ length: 6 }, (_, index) => buildTask(index)),
+  })
+
+  const parsed = parseRoadmapGenerationResult(input)
+  assert.equal(parsed.skillLevel, 'master')
 })
 
 test('parseRoadmapGenerationResult falls back to intermediate for invalid skill level', () => {
@@ -123,4 +140,39 @@ test('buildRoadmapPrompt keeps no-solution guard and Stage 1 kickoff constraints
   assert.match(prompt, /Never give complete code solutions in the description or hint fields/i)
   assert.match(prompt, /Special Stage 1 requirement/i)
   assert.match(prompt, /Task 1 must explain how to start from zero/i)
+  assert.match(prompt, /Allowed skill levels: beginner, intermediate, advanced, master\./i)
+  assert.match(prompt, /"skillLevel": "beginner\|intermediate\|advanced\|master"/i)
+})
+
+test('selectGeminiModel routes advanced and master to pro model', () => {
+  assert.equal(selectGeminiModel('beginner'), 'gemini-2.5-flash')
+  assert.equal(selectGeminiModel('intermediate'), 'gemini-2.5-flash')
+  assert.equal(selectGeminiModel('advanced'), 'gemini-2.5-pro')
+  assert.equal(selectGeminiModel('master'), 'gemini-2.5-pro')
+  assert.equal(selectGeminiModel('hard'), 'gemini-2.5-pro')
+})
+
+test('buildCodeCheckPrompt keeps short-snippet and no-full-solution guardrails', () => {
+  const prompt = buildCodeCheckPrompt(
+    {
+      title: 'Build input validation',
+      description: 'Validate empty values and show an inline error',
+      exampleOutput: '',
+    },
+    'const value = input.trim()',
+    null,
+  )
+
+  assert.match(prompt, /Never provide complete working code or a full-file answer/i)
+  assert.match(prompt, /keep each snippet at 6 lines max/i)
+  assert.match(prompt, /Return ONLY raw JSON with this exact schema/i)
+})
+
+test('buildProjectTitlePrompt enforces concise plain-text title output', () => {
+  const prompt = buildProjectTitlePrompt('I want to build a real-time kanban board with auth')
+
+  assert.match(prompt, /Return a plain-text title only/i)
+  assert.match(prompt, /Use 3 to 7 words/i)
+  assert.match(prompt, /No markdown, no quotes, no numbering/i)
+  assert.match(prompt, /Return ONLY the title text\./i)
 })

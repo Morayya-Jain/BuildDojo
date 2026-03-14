@@ -16,6 +16,11 @@ import swift from 'highlight.js/lib/languages/swift'
 import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
+import {
+  MENTOR_SNIPPET_MAX_LINES,
+  MENTOR_SNIPPET_TRUNCATION_NOTE,
+  limitMentorSnippetSegments,
+} from '../lib/mentorSnippetGuardrail'
 import { parseRichTextSegments } from '../lib/richTextParser'
 
 hljs.registerLanguage('bash', bash)
@@ -84,7 +89,10 @@ function highlightCode(content, language) {
 }
 
 function RichTextMessage({ text, className = '' }) {
-  const segments = parseRichTextSegments(text)
+  const segments = limitMentorSnippetSegments(
+    parseRichTextSegments(text),
+    MENTOR_SNIPPET_MAX_LINES,
+  )
 
   return (
     <div className={`flex flex-col gap-2 text-sm leading-6 text-slate-800 ${className}`.trim()}>
@@ -110,6 +118,11 @@ function RichTextMessage({ text, className = '' }) {
                   dangerouslySetInnerHTML={{ __html: highlighted }}
                 />
               </pre>
+              {segment.isTrimmedForGuidance ? (
+                <p className="border-t border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
+                  {MENTOR_SNIPPET_TRUNCATION_NOTE}
+                </p>
+              ) : null}
             </div>
           )
         }

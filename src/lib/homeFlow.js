@@ -74,11 +74,15 @@ export function deriveWelcomeName(user) {
 export function deriveSkillBadge(profile) {
   const expertise = toText(profile?.expertiseLevel ?? profile?.expertise_level).trim().toLowerCase()
 
+  if (expertise === 'master') {
+    return 'Master'
+  }
+
   if (expertise === 'intermediate' || expertise === 'exploring' || expertise === 'student') {
     return 'Intermediate'
   }
 
-  if (expertise === 'advanced' || expertise === 'master') {
+  if (expertise === 'advanced') {
     return 'Advanced'
   }
 
