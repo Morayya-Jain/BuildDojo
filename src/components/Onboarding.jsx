@@ -1,8 +1,14 @@
 import { useState } from 'react'
-import { buttonPrimary, sizeLg } from '../lib/buttonStyles'
+import {
+  buttonPrimary,
+  buttonSecondary,
+  sizeLg,
+  sizeMd,
+} from '../lib/buttonStyles'
 
 function Onboarding({
   onSubmit,
+  onBack,
   isGeneratingRoadmap,
   errorMessage,
   defaultDescription,
@@ -18,7 +24,19 @@ function Onboarding({
 
   return (
     <main className="p-4 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Start a New Project</h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold">Start a New Project</h1>
+        {onBack ? (
+          <button
+            type="button"
+            className={`${buttonSecondary} ${sizeMd}`}
+            onClick={onBack}
+            disabled={isGeneratingRoadmap}
+          >
+            Back to dashboard
+          </button>
+        ) : null}
+      </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1">

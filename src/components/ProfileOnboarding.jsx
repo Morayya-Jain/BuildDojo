@@ -177,6 +177,16 @@ function ProfileOnboarding({
     await submitProfile()
   }
 
+  const handleBackStep = () => {
+    setStepError('')
+
+    if (stepIndex === 0) {
+      return
+    }
+
+    setStepIndex((prev) => prev - 1)
+  }
+
   const hasSelectedValues = Array.isArray(currentStep.value)
     ? currentStep.value.length > 0
     : Boolean(currentStep.value)
@@ -235,6 +245,16 @@ function ProfileOnboarding({
 
         <div className="mt-8 flex flex-col items-end gap-3">
           <div className="flex gap-3">
+            {stepIndex > 0 ? (
+              <button
+                type="button"
+                className={`${buttonSecondary} ${sizeLg}`}
+                disabled={isSaving}
+                onClick={handleBackStep}
+              >
+                Back
+              </button>
+            ) : null}
             <button
               type="button"
               className={`${buttonSecondary} ${sizeLg}`}

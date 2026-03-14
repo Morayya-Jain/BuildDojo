@@ -1548,6 +1548,7 @@ function App() {
     return (
       <Onboarding
         onSubmit={handleGenerateRoadmap}
+        onBack={handleBackToDashboard}
         isGeneratingRoadmap={isGeneratingRoadmap}
         errorMessage={uiError}
         defaultDescription={projectDescription}
