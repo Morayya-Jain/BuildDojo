@@ -1,100 +1,105 @@
-import {
-  buttonDanger,
-  buttonPrimary,
-  buttonSecondary,
-  sizeMd,
-  sizeSm,
-} from '../lib/buttonStyles'
+import logo from '../assets/dojobuild-logo-riya.png'
 
 function Dashboard({
-  projects,
-  isLoadingProjects,
-  onStartNewProject,
-  onEditProfile,
-  onContinueProject,
-  onLogOut,
-  onRefresh,
-  errorMessage,
+  projects = [],
+  isLoadingProjects = false,
+  onStartNewProject = () => {},
+  onEditProfile = () => {},
+  onContinueProject = () => {},
+  onLogOut = () => {},
+  errorMessage = '',
 }) {
+  const actionButtonClass =
+    'inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-medium text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60'
+  const logoutButtonClass =
+    'inline-flex h-10 items-center justify-center rounded-xl border border-red-700 bg-red-600 px-4 text-sm font-medium text-white transition hover:border-red-600 hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:opacity-60'
+  const continueButtonClass =
+    'inline-flex h-10 items-center justify-center rounded-xl border border-green-700 bg-green-600 px-6 text-sm font-semibold text-white transition hover:border-green-600 hover:bg-green-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-300 disabled:cursor-not-allowed disabled:opacity-60'
+
   return (
-    <main className="p-4 flex flex-col gap-4">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <button
-          type="button"
-          className={`${buttonDanger} ${sizeSm}`}
-          onClick={onLogOut}
-        >
-          Log Out
-        </button>
+    <main className="min-h-screen bg-slate-100 text-slate-900">
+      <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="DojoBuild logo" className="h-8 w-8 rounded-md" />
+            <p className="text-lg font-semibold text-slate-900 md:text-xl">DojoBuild</p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 md:gap-3">
+            <button
+              type="button"
+              className={actionButtonClass}
+              onClick={onStartNewProject}
+              disabled={isLoadingProjects}
+            >
+              Start a new project
+            </button>
+            <button
+              type="button"
+              className={actionButtonClass}
+              onClick={onEditProfile}
+              disabled={isLoadingProjects}
+            >
+              Edit profile
+            </button>
+            <button type="button" className={logoutButtonClass} onClick={onLogOut}>
+              Log Out
+            </button>
+          </div>
+        </div>
       </header>
 
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className={`${buttonPrimary} ${sizeMd}`}
-          onClick={onStartNewProject}
-          disabled={isLoadingProjects}
-        >
-          Start a new project
-        </button>
-        <button
-          type="button"
-          className={`${buttonSecondary} ${sizeMd}`}
-          onClick={onRefresh}
-          disabled={isLoadingProjects}
-        >
-          Refresh
-        </button>
-        <button
-          type="button"
-          className={`${buttonSecondary} ${sizeMd}`}
-          onClick={onEditProfile}
-          disabled={isLoadingProjects}
-        >
-          Edit profile
-        </button>
-      </div>
+      <section className="p-4 md:p-8">
+        <div className="mx-auto max-w-6xl">
+          <h1 className="text-3xl font-bold text-slate-900 md:text-4xl">Dashboard</h1>
+          <h2 className="mt-6 text-xl font-semibold text-slate-900 md:mt-8 md:text-2xl">
+            Past projects
+          </h2>
 
-      {isLoadingProjects && <p>Loading projects...</p>}
-      {errorMessage && <p className="text-red-600">{errorMessage}</p>}
+          {isLoadingProjects ? <p className="mt-4 text-sm text-slate-700">Loading projects...</p> : null}
+          {errorMessage ? <p className="mt-3 text-sm text-red-600">{errorMessage}</p> : null}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-xl font-semibold">Past projects</h2>
+          {!isLoadingProjects && projects.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-700">No projects yet. Start one now.</p>
+          ) : null}
 
-        {projects.length === 0 ? (
-          <p>No projects yet. Start one now.</p>
-        ) : (
-          projects.map((project) => (
-            <article key={project.id} className="border p-3 flex flex-col gap-2">
-              <p>
-                <strong>Description:</strong>{' '}
-                {project.description.length > 120
-                  ? `${project.description.slice(0, 120)}...`
-                  : project.description}
-              </p>
-              <p>
-                <strong>Skill level:</strong> {project.skill_level}
-              </p>
-              <p>
-                <strong>Status:</strong> {project.completed ? 'Completed' : 'In Progress'}
-              </p>
-              <p>
-                <strong>Created:</strong>{' '}
-                {new Date(project.created_at).toLocaleString()}
-              </p>
-              <div>
-                <button
-                  type="button"
-                  className={`${buttonSecondary} ${sizeSm}`}
-                  onClick={() => onContinueProject(project)}
-                >
-                  Continue
-                </button>
-              </div>
-            </article>
-          ))
-        )}
+          <div className="mt-4 space-y-4">
+            {projects.map((project) => (
+              <article
+                key={project.id}
+                className="rounded-2xl border-2 border-slate-300 bg-slate-100 p-4 md:p-6"
+              >
+                <div className="space-y-3">
+                  <p className="break-words text-sm text-slate-900 md:text-base">
+                    <strong className="font-semibold">Description:</strong> {project.description}
+                  </p>
+                  <p className="text-sm text-slate-900 md:text-base">
+                    <strong className="font-semibold">Skill level:</strong> {project.skill_level}
+                  </p>
+                  <p className="text-sm text-slate-900 md:text-base">
+                    <strong className="font-semibold">Status:</strong>{' '}
+                    {project.completed ? 'Completed' : 'In Progress'}
+                  </p>
+                  <p className="text-sm text-slate-900 md:text-base">
+                    <strong className="font-semibold">Created:</strong>{' '}
+                    {new Date(project.created_at).toLocaleString()}
+                  </p>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      className={continueButtonClass}
+                      onClick={() => onContinueProject(project)}
+                      disabled={isLoadingProjects}
+                    >
+                      Continue
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+
       </section>
     </main>
   )

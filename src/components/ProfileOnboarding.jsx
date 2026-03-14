@@ -23,7 +23,7 @@ const OPTION_DESCRIPTIONS = {
   healthtech: 'Improving health outcomes through thoughtful software design.',
 }
 
-function OptionIcon({ value, className = 'h-10 w-10 text-slate-700' }) {
+function OptionIcon({ value, className = 'h-9 w-9 text-slate-700' }) {
   const iconClass = className
 
   if (value === 'beginner') {
@@ -163,33 +163,57 @@ function OptionIcon({ value, className = 'h-10 w-10 text-slate-700' }) {
   )
 }
 
-function OptionCard({ option, selected, onClick }) {
+function OptionCard({ option, selected, onClick, compact = false }) {
   const description = option.description || OPTION_DESCRIPTIONS[option.value] || ''
 
   return (
     <button
       type="button"
       onClick={() => onClick(option.value)}
-      className={`relative flex min-h-[210px] flex-col items-center justify-start overflow-hidden rounded-2xl border px-5 py-6 text-center transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 ${
+      className={`flex w-full flex-col items-center justify-start rounded-2xl border bg-white px-4 py-6 text-center transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 ${
         selected
-          ? 'border-green-500 bg-green-50 text-slate-900 shadow-sm'
-          : 'border-slate-200 bg-white text-slate-900 hover:border-green-300'
+          ? 'border-green-500 bg-green-50/70 text-slate-900 shadow-sm'
+          : 'border-slate-200 text-slate-900 hover:border-slate-300'
       }`}
       aria-pressed={selected}
     >
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.07]" aria-hidden="true">
-        <OptionIcon value={option.value} className="h-36 w-36 text-slate-600" />
+      <div
+        className={`flex h-12 w-12 items-center justify-center rounded-xl border ${
+          selected
+            ? 'border-green-200 bg-green-100 text-green-700'
+            : 'border-slate-200 bg-slate-50 text-slate-700'
+        }`}
+      >
+        <OptionIcon value={option.value} />
       </div>
-      <div className="relative z-10 flex flex-col items-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white">
-          <OptionIcon value={option.value} />
-        </div>
-        <h3 className="mt-4 text-xl font-semibold tracking-tight text-slate-900">
+
+      <div className={`mt-4 flex flex-col items-center ${compact ? 'gap-2' : 'gap-3'}`}>
+        <h3 className={`${compact ? 'text-lg' : 'text-xl'} font-semibold tracking-tight text-slate-900`}>
           {option.label}
         </h3>
-        {description ? <p className="mt-3 max-w-72 text-sm leading-6 text-slate-600">{description}</p> : null}
+        {description ? (
+          <p className={`${compact ? 'max-w-64 text-xs leading-5' : 'max-w-72 text-sm leading-6'} text-slate-600`}>
+            {description}
+          </p>
+        ) : null}
       </div>
     </button>
+  )
+}
+
+function StepPill({ index, isActive, label }) {
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide ${
+        isActive
+          ? 'border-green-300 bg-green-50 text-green-800'
+          : 'border-slate-200 bg-white text-slate-500'
+      }`}
+      aria-current={isActive ? 'step' : undefined}
+    >
+      <p>{`Step ${index + 1}`}</p>
+      <p className="mt-1 normal-case tracking-normal">{label}</p>
+    </div>
   )
 }
 
@@ -307,10 +331,10 @@ function ProfileOnboarding({
     ? currentStep.value.length > 0
     : Boolean(currentStep.value)
 
-  const gridClassName =
-    currentStep.options.length <= 4
-      ? 'grid grid-cols-1 gap-4 min-[700px]:grid-cols-2 sm:gap-6'
-      : 'grid grid-cols-1 gap-4 min-[700px]:grid-cols-2 lg:grid-cols-3 sm:gap-6'
+  const isCompactStep = currentStep.options.length > 4
+  const gridClassName = isCompactStep
+    ? 'grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3'
+    : 'grid grid-cols-1 gap-4 md:grid-cols-2'
 
   const primaryButtonClass =
     'inline-flex h-12 items-center justify-center rounded-xl border border-green-700 bg-green-600 px-5 text-sm font-semibold text-white transition hover:border-green-600 hover:bg-green-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 disabled:cursor-not-allowed disabled:border-slate-400 disabled:bg-slate-400'
@@ -320,8 +344,8 @@ function ProfileOnboarding({
     'inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 disabled:cursor-not-allowed disabled:opacity-60'
 
   return (
-    <main className="min-h-screen bg-slate-100 p-4 sm:p-6 lg:p-8">
-      <section className="mx-auto w-full max-w-6xl rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8 lg:p-10">
+    <main className="min-h-screen bg-slate-100 px-4 py-8 sm:px-6 sm:py-10">
+      <section className="mx-auto w-full max-w-5xl">
         <header className="text-center">
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
             Customisation Screen
@@ -332,8 +356,8 @@ function ProfileOnboarding({
           ) : null}
         </header>
 
-        <div className="mt-6 flex items-center justify-between gap-3">
-          <span className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
             {currentStep.sectionLabel} of {STEP_COUNT}
           </span>
           {onExit ? (
@@ -348,7 +372,18 @@ function ProfileOnboarding({
           ) : null}
         </div>
 
-        <div className="mx-auto mt-6 max-w-4xl rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-center sm:px-6 sm:py-5">
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {steps.map((step, index) => (
+            <StepPill
+              key={step.sectionLabel}
+              index={index}
+              isActive={index === stepIndex}
+              label={step.sectionLabel}
+            />
+          ))}
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-center sm:px-6 sm:py-5">
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
             {currentStep.title}
           </h2>
@@ -357,7 +392,7 @@ function ProfileOnboarding({
           ) : null}
         </div>
 
-        <div className={`mt-6 ${gridClassName}`}>
+        <div className={`mt-4 ${gridClassName}`}>
           {currentStep.options.map((option) => {
             const isSelected = Array.isArray(currentStep.value)
               ? currentStep.value.includes(option.value)
@@ -369,6 +404,7 @@ function ProfileOnboarding({
                 option={option}
                 selected={isSelected}
                 onClick={handleToggleOption}
+                compact={isCompactStep}
               />
             )
           })}
@@ -397,9 +433,6 @@ function ProfileOnboarding({
               </button>
             </div>
 
-            {stepIndex > 0 ? (
-              <span className="hidden sm:block" />
-            ) : null}
             <button
               type="button"
               className={primaryButtonClass}

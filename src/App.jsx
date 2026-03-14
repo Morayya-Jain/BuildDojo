@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AuthScreen from './components/AuthScreen'
 import CompletionScreen from './components/CompletionScreen'
+import Dashboard from './components/Dashboard'
 import Editor from './components/Editor'
 import FeedbackPanel from './components/FeedbackPanel'
 import FileTree from './components/FileTree'
@@ -10,6 +11,7 @@ import ProfileOnboarding from './components/ProfileOnboarding'
 import ProgressBar from './components/ProgressBar'
 import Roadmap from './components/Roadmap'
 import RunConsole from './components/RunConsole'
+import workspaceLogo from './assets/workspace-logo.png'
 import { useAppState } from './hooks/useAppState'
 import { useAuth } from './hooks/useAuth'
 import { useGemini } from './hooks/useGemini'
@@ -532,7 +534,7 @@ function App() {
     setPreviewSrcDoc('')
     setPreviewError('')
     setIsEditingProfile(false)
-    setScreen('dashboard')
+    setScreen('new-project')
   }, [resetApp])
 
   const handleCompleteProfile = useCallback(
@@ -1464,6 +1466,12 @@ function App() {
     }
   }, [loadProjects, resetApp, user])
 
+  const handleEditProfile = useCallback(() => {
+    setUiError('')
+    setIsEditingProfile(true)
+    setScreen('profile-onboarding')
+  }, [])
+
   const handleReopenLastTaskFromCompletion = useCallback(async () => {
     if (isMarkingTaskComplete || tasks.length === 0) {
       return
@@ -1571,12 +1579,28 @@ function App() {
 
   if (screen === 'dashboard' && tasks.length === 0 && !currentProjectId) {
     return (
+      <Dashboard
+        projects={projects}
+        isLoadingProjects={isLoadingProjects}
+        onStartNewProject={handleStartNewProject}
+        onEditProfile={handleEditProfile}
+        onContinueProject={handleContinueProject}
+        onLogOut={handleLogOut}
+        errorMessage={uiError}
+      />
+    )
+  }
+
+  if (screen === 'new-project' && tasks.length === 0 && !currentProjectId) {
+    return (
       <Onboarding
         onSubmit={handleGenerateRoadmap}
         projects={projects}
         isLoadingProjects={isLoadingProjects}
         onContinueProject={handleContinueProject}
         onLogOut={handleLogOut}
+        onBackToDashboard={handleBackToDashboard}
+        onEditProfile={handleEditProfile}
         user={appUser}
         isGeneratingRoadmap={isGeneratingRoadmap}
         errorMessage={uiError}
@@ -1596,82 +1620,121 @@ function App() {
     )
   }
 
+  const showWorkspaceStatus =
+    uiError ||
+    isLoadingProjects ||
+    isLoadingProfile ||
+    isSavingProfile ||
+    isGeneratingRoadmap ||
+    isCheckingCode ||
+    isCheckingBeforeComplete ||
+    isMarkingTaskComplete ||
+    isAskingFollowUp ||
+    isSavingFiles ||
+    fileError ||
+    fileNotice
+
   return (
-    <main className="p-3 flex flex-col gap-3">
-      <header className="flex items-center justify-between border p-3">
-        <h1 className="text-xl font-bold">AI Coding Mentor Workspace</h1>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className={`${buttonSecondary} ${sizeSm}`}
-            onClick={handleExportProject}
-            disabled={isExporting || isImporting || projectFiles.length === 0}
-          >
-            {isExporting ? 'Exporting...' : 'Download'}
-          </button>
-          <button
-            type="button"
-            className={`${buttonSecondary} ${sizeSm}`}
-            onClick={handleImportClick}
-            disabled={isImporting || isExporting}
-          >
-            {isImporting ? 'Importing...' : 'Import'}
-          </button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/zip,.zip"
-            className="hidden"
-            onChange={handleImportProject}
-          />
-          <button
-            type="button"
-            className={`${buttonSecondary} ${sizeSm}`}
-            onClick={handleBackToDashboard}
-          >
-            Dashboard
-          </button>
-          <button
-            type="button"
-            className={`${buttonDanger} ${sizeSm}`}
-            onClick={handleLogOut}
-          >
-            Log Out
-          </button>
+    <main className="min-h-screen bg-slate-50">
+      <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <img src={workspaceLogo} alt="DojoBuild" className="h-8 w-8 object-contain" />
+            <h1 className="text-3xl font-semibold text-slate-900 md:text-4xl">Dojo Workspace</h1>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className={`${buttonSecondary} ${sizeSm} rounded-xl px-5 py-2`}
+              onClick={handleExportProject}
+              disabled={isExporting || isImporting || projectFiles.length === 0}
+            >
+              {isExporting ? 'Exporting...' : 'Download'}
+            </button>
+            <button
+              type="button"
+              className={`${buttonSecondary} ${sizeSm} rounded-xl px-5 py-2`}
+              onClick={handleImportClick}
+              disabled={isImporting || isExporting}
+            >
+              {isImporting ? 'Importing...' : 'Import'}
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/zip,.zip"
+              className="hidden"
+              onChange={handleImportProject}
+            />
+            <button
+              type="button"
+              className={`${buttonSecondary} ${sizeSm} rounded-xl px-5 py-2`}
+              onClick={handleBackToDashboard}
+            >
+              Dashboard
+            </button>
+            <button
+              type="button"
+              className={`${buttonDanger} ${sizeSm} rounded-xl px-5 py-2`}
+              onClick={handleLogOut}
+            >
+              Log Out
+            </button>
+          </div>
         </div>
       </header>
 
       <ProgressBar completedCount={completedCount} totalCount={tasks.length} />
 
-      {uiError && <p className="text-red-600">{uiError}</p>}
-      {isLoadingProjects && <p>Loading projects...</p>}
-      {isLoadingProfile && <p>Loading profile...</p>}
-      {isSavingProfile && <p>Saving profile...</p>}
-      {isGeneratingRoadmap && <p>Generating roadmap...</p>}
-      {isCheckingCode && !isCheckingBeforeComplete && <p>Checking code...</p>}
-      {isCheckingBeforeComplete && <p>Checking code before completion...</p>}
-      {isMarkingTaskComplete && !isCheckingBeforeComplete && <p>Updating task status...</p>}
-      {isAskingFollowUp && <p>Getting mentor reply...</p>}
-      {isSavingFiles && <p>Saving project files...</p>}
-      {fileError && <p className="text-red-600">{fileError}</p>}
-      {fileNotice && <p className="text-sky-700">{fileNotice}</p>}
+      {showWorkspaceStatus ? (
+        <section className="border-b border-slate-200 bg-white px-4 py-2 text-sm md:px-6">
+          {uiError && <p className="text-red-600">{uiError}</p>}
+          {isLoadingProjects && <p>Loading projects...</p>}
+          {isLoadingProfile && <p>Loading profile...</p>}
+          {isSavingProfile && <p>Saving profile...</p>}
+          {isGeneratingRoadmap && <p>Generating roadmap...</p>}
+          {isCheckingCode && !isCheckingBeforeComplete && <p>Checking code...</p>}
+          {isCheckingBeforeComplete && <p>Checking code before completion...</p>}
+          {isMarkingTaskComplete && !isCheckingBeforeComplete && <p>Updating task status...</p>}
+          {isAskingFollowUp && <p>Getting mentor reply...</p>}
+          {isSavingFiles && <p>Saving project files...</p>}
+          {fileError && <p className="text-red-600">{fileError}</p>}
+          {fileNotice && <p className="text-sky-700">{fileNotice}</p>}
+        </section>
+      ) : null}
 
-      <section className="grid grid-cols-1 lg:grid-cols-[300px_1fr_360px] gap-3">
-        <Roadmap
-          tasks={tasks}
-          currentTaskIndex={currentTaskIndex}
-          onSelectTask={handleSelectTask}
-        />
+      <section className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
+        <aside className="border-b border-slate-200 bg-white p-4 xl:min-h-[calc(100vh-150px)] xl:border-b-0 xl:border-r">
+          <FileTree
+            files={projectFiles}
+            activeFileId={activeFile?.id || null}
+            onSelectFile={handleSelectFile}
+            onCreateFile={handleCreateFile}
+            onRenameFile={handleRenameFile}
+            onDeleteFile={handleDeleteFile}
+            isBusy={isSavingFiles || isImporting || isExporting}
+            errorMessage={fileError}
+          />
 
-        <div className="flex flex-col gap-3">
-          <section className="border p-3">
-            <h2 className="text-lg font-semibold">
+          <div className="mt-8">
+            <Roadmap
+              tasks={tasks}
+              currentTaskIndex={currentTaskIndex}
+              onSelectTask={handleSelectTask}
+            />
+          </div>
+        </aside>
+
+        <div className="flex min-w-0 flex-col gap-3 border-b border-slate-200 bg-white p-3 md:p-4 xl:border-b-0 xl:border-r">
+          <section className="rounded-xl border border-slate-300 bg-slate-50 p-4">
+            <h2 className="text-xl font-semibold text-slate-900">
               Task {currentTaskIndex + 1}: {currentTask?.title}
             </h2>
-            <p className="mt-2">{currentTask?.description}</p>
+            <p className="mt-2 text-slate-700">{currentTask?.description}</p>
             <button
               type="button"
-              className={`${buttonPrimary} ${sizeSm} mt-3`}
+              className={`${buttonPrimary} ${sizeSm} mt-3 rounded-lg border-emerald-600 bg-emerald-500 hover:border-emerald-500 hover:bg-emerald-400`}
               onClick={handleMarkCurrentTaskComplete}
               disabled={
                 !currentTask ||
@@ -1684,29 +1747,16 @@ function App() {
             </button>
           </section>
 
-          <section className="grid grid-cols-1 xl:grid-cols-[250px_1fr] gap-3">
-            <FileTree
-              files={projectFiles}
-              activeFileId={activeFile?.id || null}
-              onSelectFile={handleSelectFile}
-              onCreateFile={handleCreateFile}
-              onRenameFile={handleRenameFile}
-              onDeleteFile={handleDeleteFile}
-              isBusy={isSavingFiles || isImporting || isExporting}
-              errorMessage={fileError}
-            />
-
-            <Editor
-              projectDescription={projectDescription}
-              value={activeFile?.content || ''}
-              onChange={handleEditorChange}
-              readOnly={Boolean(currentTask?.completed) && firstIncompleteIndex !== -1}
-              language={editorLanguage}
-              tabs={fileTabs}
-              activeTabId={activeFile?.id || null}
-              onSelectTab={handleSelectFile}
-            />
-          </section>
+          <Editor
+            projectDescription={projectDescription}
+            value={activeFile?.content || ''}
+            onChange={handleEditorChange}
+            readOnly={Boolean(currentTask?.completed) && firstIncompleteIndex !== -1}
+            language={editorLanguage}
+            tabs={fileTabs}
+            activeTabId={activeFile?.id || null}
+            onSelectTab={handleSelectFile}
+          />
 
           <RunConsole
             key={currentTask?.id || 'run-console'}
@@ -1716,8 +1766,8 @@ function App() {
             onRunPreview={handleRunPreview}
           />
           {showHtmlPreview ? (
-            <section className="border p-3 flex flex-col gap-2">
-              <h2 className="text-lg font-semibold">Live Preview</h2>
+            <section className="flex flex-col gap-2 rounded-xl border border-slate-300 bg-white p-3">
+              <h2 className="text-lg font-semibold text-slate-900">Live Preview</h2>
               <p className="text-sm text-slate-700">
                 Click <strong>Refresh Preview</strong> in Run &amp; Output to update this panel.
               </p>
@@ -1726,30 +1776,32 @@ function App() {
                 title="Project preview"
                 srcDoc={previewSrcDoc || '<p>Run preview to render your files.</p>'}
                 sandbox="allow-scripts"
-                className="w-full h-64 border"
+                className="h-64 w-full rounded-lg border border-slate-300"
               />
             </section>
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-3">
-          <HintBox
-            task={currentTask}
-            hintsUsed={hintsUsed}
-            exampleViewed={exampleViewed}
-            onGiveHint={incrementHints}
-            onShowExample={() => setExampleViewed((prev) => !prev)}
-            isDisabled={!currentTask}
-          />
-          <FeedbackPanel
-            feedbackHistory={feedbackHistory}
-            isCheckingCode={isCheckingCode}
-            isAskingFollowUp={isAskingFollowUp}
-            onCheckCode={handleCheckCode}
-            onAskFollowUp={handleFollowUp}
-            errorMessage={uiError}
-          />
-        </div>
+        <aside className="bg-white p-4 xl:min-h-[calc(100vh-150px)]">
+          <div className="flex flex-col gap-4">
+            <HintBox
+              task={currentTask}
+              hintsUsed={hintsUsed}
+              exampleViewed={exampleViewed}
+              onGiveHint={incrementHints}
+              onShowExample={() => setExampleViewed((prev) => !prev)}
+              isDisabled={!currentTask}
+            />
+            <FeedbackPanel
+              feedbackHistory={feedbackHistory}
+              isCheckingCode={isCheckingCode}
+              isAskingFollowUp={isAskingFollowUp}
+              onCheckCode={handleCheckCode}
+              onAskFollowUp={handleFollowUp}
+              errorMessage={uiError}
+            />
+          </div>
+        </aside>
       </section>
     </main>
   )

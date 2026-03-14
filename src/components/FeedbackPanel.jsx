@@ -24,49 +24,51 @@ function FeedbackPanel({
   }
 
   return (
-    <section className="border p-3 flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Mentor Feedback</h2>
+    <section className="flex flex-col gap-3 border border-slate-300 bg-white p-4">
+      <h2 className="text-2xl font-semibold text-slate-900">Mentor Feedback</h2>
 
       <button
         type="button"
-        className={`${buttonPrimary} ${sizeLg}`}
+        className={`${buttonPrimary} ${sizeLg} w-full rounded-lg border-emerald-600 bg-emerald-500 hover:border-emerald-500 hover:bg-emerald-400`}
         onClick={onCheckCode}
         disabled={isCheckingCode}
       >
         {isCheckingCode ? 'Checking code...' : 'Check My Code'}
       </button>
 
-      <div className="border p-2 min-h-40 max-h-80 overflow-auto flex flex-col gap-2">
+      <div className="min-h-[320px] max-h-[420px] overflow-auto rounded-xl border border-slate-300 bg-slate-50 p-3">
         {feedbackHistory.length === 0 ? (
-          <p>No feedback yet.</p>
+          <p className="text-slate-500">No feedback yet.</p>
         ) : (
-          feedbackHistory.map((entry, index) => (
-            <div key={`${entry.role}-${index}`} className="flex flex-col gap-1">
-              <strong>{entry.role === 'ai' ? 'Mentor' : 'You'}:</strong>
-              {entry.role === 'ai' ? (
-                <RichTextMessage text={entry.message} />
-              ) : (
-                <p className="whitespace-pre-wrap break-words">{entry.message}</p>
-              )}
-            </div>
-          ))
+          <div className="flex flex-col gap-3">
+            {feedbackHistory.map((entry, index) => (
+              <div key={`${entry.role}-${index}`} className="flex flex-col gap-1">
+                <strong className="text-sm text-slate-700">{entry.role === 'ai' ? 'Mentor' : 'You'}:</strong>
+                {entry.role === 'ai' ? (
+                  <RichTextMessage text={entry.message} />
+                ) : (
+                  <p className="whitespace-pre-wrap break-words text-sm">{entry.message}</p>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
       <form onSubmit={handleFollowUp} className="flex flex-col gap-2">
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1 text-sm font-medium text-slate-900">
           Ask a follow-up question
-          <textarea
+          <input
+            type="text"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
-            rows={3}
-            className="border p-2"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2"
             placeholder="What should I fix next?"
           />
         </label>
         <button
           type="submit"
-          className={`${buttonSecondary} ${sizeLg}`}
+          className={`${buttonSecondary} ${sizeLg} w-full rounded-lg`}
           disabled={isAskingFollowUp}
         >
           {isAskingFollowUp ? 'Sending...' : 'Send question'}

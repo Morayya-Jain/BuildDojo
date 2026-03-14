@@ -20,13 +20,13 @@ function HintBox({
       : 'No example output is available for this task yet.'
 
   return (
-    <section className="border p-3 flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">Hints</h2>
+    <section className="flex flex-col gap-3 border border-slate-300 bg-white p-4">
+      <h2 className="text-2xl font-semibold text-slate-900">Hints</h2>
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2">
         <button
           type="button"
-          className={`${buttonPrimary} ${sizeSm}`}
+          className={`${buttonPrimary} ${sizeSm} w-full justify-between rounded-lg border-emerald-600 bg-emerald-500 hover:border-emerald-500 hover:bg-emerald-400`}
           onClick={onGiveHint}
           disabled={isDisabled}
         >
@@ -34,7 +34,7 @@ function HintBox({
         </button>
         <button
           type="button"
-          className={`${buttonSecondary} ${sizeSm}`}
+          className={`${buttonSecondary} ${sizeSm} w-full justify-between rounded-lg border-slate-300 bg-white text-slate-700`}
           onClick={onShowExample}
           disabled={isDisabled || hintsUsed < 1}
           title={hintsUsed < 1 ? 'Reveal at least one hint first.' : undefined}
@@ -43,19 +43,19 @@ function HintBox({
         </button>
       </div>
       {hintsUsed < 1 && !isDisabled ? (
-        <p className="text-sm text-gray-600">Reveal one hint to unlock the example.</p>
+        <p className="text-sm text-slate-600">Reveal one hint to unlock the example.</p>
       ) : null}
 
       {hintsUsed > 0 && (
-        <div>
-          <h3 className="font-semibold">Hint</h3>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+          <h3 className="font-semibold text-slate-900">Hint</h3>
           <RichTextMessage text={hintText} />
         </div>
       )}
 
       {exampleViewed && (
-        <div>
-          <h3 className="font-semibold">Example Output</h3>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <h3 className="font-semibold text-slate-900">Example Output</h3>
           <RichTextMessage text={exampleText} />
         </div>
       )}

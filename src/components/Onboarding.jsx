@@ -1,10 +1,127 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import logo from '../assets/dojobuild-logo.png'
+import logo from '../assets/new-project-logo.png'
 import {
   deriveWelcomeName,
   getStarterTemplate,
   STARTER_PROMPT_CARDS,
 } from '../lib/homeFlow'
+
+const SKILL_LEVEL_CHIPS = [
+  { id: 'beginner', label: 'Beginner', value: 'beginner' },
+  { id: 'explorer', label: 'Explorer', value: 'intermediate' },
+  { id: 'student', label: 'Student', value: 'intermediate' },
+  { id: 'master', label: 'Master', value: 'advanced' },
+]
+
+function mapSkillChipToPreference(chipId) {
+  return SKILL_LEVEL_CHIPS.find((chip) => chip.id === chipId)?.value || 'beginner'
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="h-5 w-5 text-slate-500" aria-hidden="true">
+      <path
+        d="M13.5 12h-.79l-.28-.27a5.5 5.5 0 1 0-.71.71l.27.28v.79l5 4.99L18.49 17l-4.99-5ZM8.5 13A4.5 4.5 0 1 1 13 8.5 4.5 4.5 0 0 1 8.5 13Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+function CodeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
+      <path
+        d="m8 8-4 4 4 4M16 8l4 4-4 4M13 5l-2 14"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
+      <path
+        d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function DatabaseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
+      <ellipse
+        cx="12"
+        cy="5"
+        rx="8"
+        ry="3"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 5v6c0 1.657 3.582 3 8 3s8-1.343 8-3V5M4 11v6c0 1.657 3.582 3 8 3s8-1.343 8-3v-6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function RocketIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" aria-hidden="true">
+      <path
+        d="M12 15c-3 0-5-2-5-5 0-4 5-7 5-7s5 3 5 7c0 3-2 5-5 5Zm0 0-3 6 3-2 3 2-3-6Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="9" r="1.6" fill="currentColor" />
+    </svg>
+  )
+}
+
+function StarterCardIcon({ starterId }) {
+  if (starterId === 'build-frontend') {
+    return <FolderIcon />
+  }
+
+  if (starterId === 'build-backend') {
+    return <DatabaseIcon />
+  }
+
+  if (starterId === 'setting-domain') {
+    return <RocketIcon />
+  }
+
+  return <CodeIcon />
+}
+
+function ProjectListIcon({ index }) {
+  if (index % 3 === 1) {
+    return <DatabaseIcon />
+  }
+
+  if (index % 3 === 2) {
+    return <RocketIcon />
+  }
+
+  return <CodeIcon />
+}
 
 function Onboarding({
   onSubmit,
@@ -12,6 +129,8 @@ function Onboarding({
   isLoadingProjects = false,
   onContinueProject = () => {},
   onLogOut = () => {},
+  onBackToDashboard = null,
+  onEditProfile = () => {},
   user,
   isGeneratingRoadmap,
   errorMessage,
@@ -20,7 +139,7 @@ function Onboarding({
   const [stepIndex, setStepIndex] = useState(0)
   const [description, setDescription] = useState(defaultDescription || '')
   const [selectedStarterId, setSelectedStarterId] = useState('')
-  const [selectedSkillLevel, setSelectedSkillLevel] = useState('intermediate')
+  const [selectedSkillChip, setSelectedSkillChip] = useState('beginner')
   const [experience, setExperience] = useState('')
   const [scope, setScope] = useState('')
   const [timeCommitment, setTimeCommitment] = useState('')
@@ -75,7 +194,7 @@ function Onboarding({
     }
 
     await onSubmit(trimmedDescription, {
-      skillLevelPreference: selectedSkillLevel,
+      skillLevelPreference: mapSkillChipToPreference(selectedSkillChip),
       experience: experience.trim() || 'Not specified.',
       scope: scope.trim() || 'Start with a simple MVP.',
       time: timeCommitment.trim() || 'Moderate pace.',
@@ -88,25 +207,57 @@ function Onboarding({
   }
 
   const actionButtonClass =
-    'inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition hover:border-green-300 hover:bg-green-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 focus-visible:border-green-500 disabled:cursor-not-allowed disabled:opacity-60'
+    'inline-flex h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60'
+  const logoutButtonClass =
+    'inline-flex h-10 items-center justify-center rounded-xl border border-red-700 bg-red-600 px-4 text-sm font-semibold text-white transition hover:border-red-600 hover:bg-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-60'
   const primaryButtonClass =
-    'inline-flex h-12 items-center justify-center rounded-xl border border-green-700 bg-green-600 px-4 text-sm font-semibold text-white transition hover:border-green-600 hover:bg-green-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 focus-visible:border-green-500 disabled:cursor-not-allowed disabled:border-slate-400 disabled:bg-slate-400'
+    'inline-flex h-12 items-center justify-center rounded-xl border border-green-700 bg-green-600 px-5 text-sm font-semibold text-white transition hover:border-green-600 hover:bg-green-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 focus-visible:border-green-500 disabled:cursor-not-allowed disabled:border-slate-400 disabled:bg-slate-400'
   const secondaryButtonClass =
-    'inline-flex h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 focus-visible:border-green-500 disabled:cursor-not-allowed disabled:opacity-60'
+    'inline-flex h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 focus-visible:border-green-500 disabled:cursor-not-allowed disabled:opacity-60'
 
   return (
-    <main className="min-h-screen bg-slate-50 lg:grid lg:grid-cols-[288px_1fr]">
-      <aside className="border-b border-slate-200 bg-white px-4 py-6 lg:border-b-0 lg:border-r">
-          <div className="flex items-center gap-3 px-2">
-            <img
-              src={logo}
-              alt="DojoBuild logo"
-              className="h-8 w-8 rounded-lg border border-green-200 bg-white p-1"
-            />
-            <p className="text-xl font-bold text-slate-900">DojoBuild</p>
+    <main className="min-h-screen bg-slate-100">
+      <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <img src={logo} alt="DojoBuild logo" className="h-8 w-8 rounded-md object-cover" />
+            <p className="text-lg font-semibold text-slate-900 md:text-xl">DojoBuild</p>
           </div>
 
-          <div className="mt-8">
+          <div className="flex flex-wrap gap-2 md:gap-3">
+            {onBackToDashboard ? (
+              <button
+                type="button"
+                className={actionButtonClass}
+                onClick={onBackToDashboard}
+                disabled={isGeneratingRoadmap}
+              >
+                Dashboard
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={actionButtonClass}
+              onClick={onEditProfile}
+              disabled={isGeneratingRoadmap}
+            >
+              Edit profile
+            </button>
+            <button
+              type="button"
+              className={logoutButtonClass}
+              onClick={onLogOut}
+              disabled={isGeneratingRoadmap}
+            >
+              Log out
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="lg:grid lg:grid-cols-[300px_1fr]">
+        <aside className="border-b border-slate-200 bg-white px-4 py-6 lg:min-h-[calc(100vh-81px)] lg:border-b-0 lg:border-r">
+          <div className="mt-2">
             <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Projects
             </p>
@@ -117,15 +268,18 @@ function Onboarding({
               ) : projects.length === 0 ? (
                 <p className="px-2 text-sm text-slate-600">No projects yet. Start one below.</p>
               ) : (
-                projects.map((project) => (
+                projects.map((project, index) => (
                   <button
                     key={project.id}
                     type="button"
-                    className="flex h-11 items-center justify-start gap-2 rounded-xl border border-transparent px-3 text-left text-sm font-medium text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-11 items-center justify-start gap-2 rounded-xl border border-transparent px-3 text-left text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => onContinueProject(project)}
                     disabled={isGeneratingRoadmap}
                     title={project.description}
                   >
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                      <ProjectListIcon index={index} />
+                    </span>
                     <span className="truncate">{projectPreview(project)}</span>
                     <span className="shrink-0 text-slate-500">›</span>
                   </button>
@@ -134,38 +288,39 @@ function Onboarding({
             </div>
           </div>
 
-      </aside>
+          {onBackToDashboard ? (
+            <div className="mt-10 border-t border-slate-200 pt-6">
+              <button
+                type="button"
+                className="inline-flex h-10 items-center gap-2 rounded-xl px-2 text-base font-medium text-slate-800 transition hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={onBackToDashboard}
+                disabled={isGeneratingRoadmap}
+              >
+                <span className="text-lg leading-none">›</span>
+                Back to Dashboard
+              </button>
+            </div>
+          ) : null}
+        </aside>
 
-      <div className="flex min-w-0 flex-col">
-        <header className="flex flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-8">
-            <button
-              type="button"
-              className={actionButtonClass}
-              onClick={onLogOut}
-              disabled={isGeneratingRoadmap}
-            >
-              Log out
-            </button>
-        </header>
-
-        <div className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
+        <div className="min-w-0 px-4 py-6 sm:px-8 sm:py-8">
           <div className="mx-auto w-full max-w-5xl">
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-5xl">
               Welcome To Your Dojo, {welcomeName}!
             </h1>
-            <p className="mt-2 text-base text-slate-600">
+            <p className="mt-2 text-lg text-slate-600">
               Type or select from the options below to get started.
             </p>
 
             <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
               {stepIndex === 0 ? (
                 <>
-                  <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {STARTER_PROMPT_CARDS.map((card) => (
                       <button
                         key={card.id}
                         type="button"
-                        className={`rounded-2xl border p-6 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 focus-visible:border-green-500 ${
+                        className={`rounded-3xl border p-6 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 focus-visible:border-green-500 ${
                           selectedStarterId === card.id
                             ? 'border-green-400 bg-green-50'
                             : 'border-slate-200 bg-white hover:border-green-300'
@@ -173,81 +328,100 @@ function Onboarding({
                         onClick={() => handleStarterSelect(card.id)}
                         disabled={isGeneratingRoadmap}
                       >
-                        <p className="text-2xl font-semibold text-slate-900">{card.title}</p>
-                        <p className="mt-3 text-base text-slate-600">{card.description}</p>
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 text-green-600">
+                            <StarterCardIcon starterId={card.id} />
+                          </span>
+                          <p className="text-2xl font-semibold text-slate-900">{card.title}</p>
+                        </div>
+                        <p className="mt-6 text-base text-slate-600">{card.description}</p>
                       </button>
                     ))}
                   </section>
 
-                  <div className="mt-2 rounded-2xl border border-slate-300 bg-white px-4 py-3">
-                    <div className="flex flex-col gap-3">
-                      <label className="flex min-w-0 flex-1 items-start gap-3">
-                        <svg
-                          viewBox="0 0 20 20"
-                          className="mt-3 h-5 w-5 shrink-0 text-slate-500"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d="M13.5 12h-.79l-.28-.27a5.5 5.5 0 1 0-.71.71l.27.28v.79l5 4.99L18.49 17l-4.99-5ZM8.5 13A4.5 4.5 0 1 1 13 8.5 4.5 4.5 0 0 1 8.5 13Z"
-                            fill="currentColor"
-                          />
-                        </svg>
-                        <textarea
-                          ref={descriptionInputRef}
-                          value={description}
-                          onChange={(event) => handleDescriptionChange(event.target.value)}
-                          placeholder="Search or ask a question..."
-                          rows={1}
-                          className="w-full min-w-0 resize-none border-none bg-transparent py-2 text-base leading-6 text-slate-900 outline-none placeholder:text-slate-500"
-                          disabled={isGeneratingRoadmap}
-                          required
-                        />
-                      </label>
+                  <div className="mt-2 rounded-3xl border border-slate-300 bg-white px-4 py-3 shadow-sm">
+                    <label className="flex min-w-0 items-start gap-3">
+                      <span className="mt-2 shrink-0">
+                        <SearchIcon />
+                      </span>
+                      <textarea
+                        ref={descriptionInputRef}
+                        value={description}
+                        onChange={(event) => handleDescriptionChange(event.target.value)}
+                        placeholder="Search or ask a question..."
+                        rows={1}
+                        className="w-full min-w-0 resize-none border-none bg-transparent py-2 text-lg leading-7 text-slate-900 outline-none placeholder:text-slate-500"
+                        disabled={isGeneratingRoadmap}
+                        required
+                      />
+                    </label>
+
+                    <div className="mt-4 flex flex-wrap gap-2 pl-8">
+                      {SKILL_LEVEL_CHIPS.map((chip) => {
+                        const isActive = chip.id === selectedSkillChip
+
+                        return (
+                          <button
+                            key={chip.id}
+                            type="button"
+                            onClick={() => setSelectedSkillChip(chip.id)}
+                            className={`inline-flex h-10 items-center rounded-full border px-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 ${
+                              isActive
+                                ? 'border-green-700 bg-green-600 text-white'
+                                : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
+                            }`}
+                            disabled={isGeneratingRoadmap}
+                          >
+                            {chip.label}
+                            {isActive ? <span className="ml-1.5 text-sm">x</span> : null}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 </>
               ) : (
-                <>
-                  <h2 className="text-xl font-semibold text-slate-900">
-                    Personalize your roadmap
-                  </h2>
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
+                  <h2 className="text-xl font-semibold text-slate-900">Personalize your roadmap</h2>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    What experience do you already have with similar tools or tech? (Optional)
-                    <textarea
-                      value={experience}
-                      onChange={(event) => setExperience(event.target.value)}
-                      rows={3}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
-                      placeholder="Example: I know basic HTML/CSS and a bit of JavaScript"
-                      disabled={isGeneratingRoadmap}
-                    />
-                  </label>
+                  <div className="mt-4 space-y-4">
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                      What experience do you already have with similar tools or tech? (Optional)
+                      <textarea
+                        value={experience}
+                        onChange={(event) => setExperience(event.target.value)}
+                        rows={3}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                        placeholder="Example: I know basic HTML/CSS and a bit of JavaScript"
+                        disabled={isGeneratingRoadmap}
+                      />
+                    </label>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    What is the smallest MVP you want first? (Optional)
-                    <textarea
-                      value={scope}
-                      onChange={(event) => setScope(event.target.value)}
-                      rows={3}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
-                      placeholder="Example: Sign up, log in, and create one todo list"
-                      disabled={isGeneratingRoadmap}
-                    />
-                  </label>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                      What is the smallest MVP you want first? (Optional)
+                      <textarea
+                        value={scope}
+                        onChange={(event) => setScope(event.target.value)}
+                        rows={3}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                        placeholder="Example: Sign up, log in, and create one todo list"
+                        disabled={isGeneratingRoadmap}
+                      />
+                    </label>
 
-                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    What pace can you commit to each week? (Optional)
-                    <input
-                      type="text"
-                      value={timeCommitment}
-                      onChange={(event) => setTimeCommitment(event.target.value)}
-                      className="h-12 rounded-xl border border-slate-300 px-3 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
-                      placeholder="Example: 4 hours per week"
-                      disabled={isGeneratingRoadmap}
-                    />
-                  </label>
-                </>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                      What pace can you commit to each week? (Optional)
+                      <input
+                        type="text"
+                        value={timeCommitment}
+                        onChange={(event) => setTimeCommitment(event.target.value)}
+                        className="h-12 rounded-xl border border-slate-300 px-3 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                        placeholder="Example: 4 hours per week"
+                        disabled={isGeneratingRoadmap}
+                      />
+                    </label>
+                  </div>
+                </div>
               )}
 
               <div className="flex flex-wrap items-center gap-2">
@@ -273,39 +447,6 @@ function Onboarding({
                       ? 'Generating roadmap...'
                       : 'Generate roadmap'}
                 </button>
-
-                {stepIndex === 0 ? (
-                  <label className="inline-flex items-center gap-2">
-                    <span className="sr-only">Skill level preference</span>
-                    <div className="relative">
-                      <select
-                        value={selectedSkillLevel}
-                        onChange={(event) => setSelectedSkillLevel(event.target.value)}
-                        className="h-12 appearance-none rounded-xl border border-slate-300 bg-white pl-3 pr-8 text-sm font-semibold text-slate-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={isGeneratingRoadmap}
-                      >
-                        <option value="none">None</option>
-                        <option value="beginner">Beginner</option>
-                        <option value="intermediate">Intermediate</option>
-                        <option value="advanced">Advanced</option>
-                      </select>
-                      <svg
-                        viewBox="0 0 20 20"
-                        className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="m5 7 5 6 5-6"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.75"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </div>
-                  </label>
-                ) : null}
               </div>
             </form>
 
@@ -314,13 +455,12 @@ function Onboarding({
               <p className="mt-2 text-sm text-slate-600">Generating roadmap...</p>
             ) : null}
 
-            <div className="mt-10 flex flex-col items-center justify-center gap-2">
+            <div className="mt-10 flex justify-center">
               <img
                 src={logo}
                 alt="DojoBuild mark"
-                className="h-14 w-14 rounded-2xl border border-slate-200 bg-white p-2"
+                className="h-12 w-12 rounded-2xl object-cover opacity-70"
               />
-              <p className="text-xs text-slate-500">DojoBuild.</p>
             </div>
           </div>
         </div>

@@ -14,24 +14,28 @@ function Editor({
   const editorLanguage = language || detectLanguage(projectDescription, value)
 
   return (
-    <section className="border p-2 h-full">
-      <h2 className="text-lg font-semibold mb-2">Editor</h2>
+    <section className="h-full overflow-hidden border border-slate-300 bg-white">
       {tabs.length > 0 ? (
-        <div className="flex gap-2 mb-2 overflow-auto">
+        <div className="flex overflow-auto border-b border-slate-300 bg-slate-100">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
-              className={`border px-2 py-1 text-sm ${tab.id === activeTabId ? 'bg-blue-600 text-white border-blue-600' : 'bg-white'}`}
+              className={`flex items-center gap-2 border-r border-slate-300 px-4 py-2 text-sm font-medium ${
+                tab.id === activeTabId
+                  ? 'bg-[#1E1E1E] text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
               onClick={() => onSelectTab?.(tab.id)}
             >
               {tab.label}
+              {tab.id === activeTabId ? <span className="h-2 w-2 rounded-full bg-emerald-500" /> : null}
             </button>
           ))}
         </div>
       ) : null}
       <MonacoEditor
-        height="70vh"
+        height="62vh"
         language={editorLanguage}
         theme="vs-dark"
         value={value ?? ''}
@@ -39,6 +43,9 @@ function Editor({
         options={{
           readOnly,
           minimap: { enabled: false },
+          fontSize: 14,
+          scrollBeyondLastLine: false,
+          lineNumbersMinChars: 3,
         }}
       />
     </section>
