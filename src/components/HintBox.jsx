@@ -1,4 +1,5 @@
 import { buttonPrimary, buttonSecondary, sizeSm } from '../lib/buttonStyles'
+import RichTextMessage from './RichTextMessage'
 
 function HintBox({
   task,
@@ -48,14 +49,14 @@ function HintBox({
       {hintsUsed > 0 && (
         <div>
           <h3 className="font-semibold">Hint</h3>
-          <p>{hintText}</p>
+          <RichTextMessage text={hintText} />
         </div>
       )}
 
       {exampleViewed && (
         <div>
           <h3 className="font-semibold">Example Output</h3>
-          <pre className="border p-2 overflow-auto whitespace-pre-wrap">{exampleText}</pre>
+          <RichTextMessage text={exampleText} />
         </div>
       )}
     </section>

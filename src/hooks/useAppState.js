@@ -8,6 +8,8 @@ const initialState = {
   tasks: [],
   currentTaskIndex: 0,
   userCode: '',
+  projectFiles: [],
+  activeFileId: null,
   feedbackHistory: [],
   hintsUsed: 0,
   exampleViewed: false,
@@ -16,6 +18,10 @@ const initialState = {
   isAskingFollowUp: false,
   isLoadingProjects: false,
   isAuthenticating: false,
+  isSavingFiles: false,
+  fileError: '',
+  isImporting: false,
+  isExporting: false,
 }
 
 export function useAppState() {
@@ -32,6 +38,8 @@ export function useAppState() {
     initialState.currentTaskIndex,
   )
   const [userCode, setUserCode] = useState(initialState.userCode)
+  const [projectFiles, setProjectFiles] = useState(initialState.projectFiles)
+  const [activeFileId, setActiveFileId] = useState(initialState.activeFileId)
   const [feedbackHistory, setFeedbackHistory] = useState(initialState.feedbackHistory)
   const [hintsUsed, setHintsUsed] = useState(initialState.hintsUsed)
   const [exampleViewed, setExampleViewed] = useState(initialState.exampleViewed)
@@ -48,6 +56,10 @@ export function useAppState() {
   const [isAuthenticating, setIsAuthenticating] = useState(
     initialState.isAuthenticating,
   )
+  const [isSavingFiles, setIsSavingFiles] = useState(initialState.isSavingFiles)
+  const [fileError, setFileError] = useState(initialState.fileError)
+  const [isImporting, setIsImporting] = useState(initialState.isImporting)
+  const [isExporting, setIsExporting] = useState(initialState.isExporting)
 
   const updateUserCode = useCallback((code) => {
     setUserCode(code ?? '')
@@ -98,7 +110,6 @@ export function useAppState() {
   }, [])
 
   const resetTaskSupportState = useCallback(() => {
-    setUserCode('')
     setFeedbackHistory([])
     setHintsUsed(0)
     setExampleViewed(false)
@@ -111,6 +122,8 @@ export function useAppState() {
     setTasks(initialState.tasks)
     setCurrentTaskIndex(initialState.currentTaskIndex)
     setUserCode(initialState.userCode)
+    setProjectFiles(initialState.projectFiles)
+    setActiveFileId(initialState.activeFileId)
     setFeedbackHistory(initialState.feedbackHistory)
     setHintsUsed(initialState.hintsUsed)
     setExampleViewed(initialState.exampleViewed)
@@ -118,6 +131,10 @@ export function useAppState() {
     setIsCheckingCode(initialState.isCheckingCode)
     setIsAskingFollowUp(initialState.isAskingFollowUp)
     setIsLoadingProjects(initialState.isLoadingProjects)
+    setIsSavingFiles(initialState.isSavingFiles)
+    setFileError(initialState.fileError)
+    setIsImporting(initialState.isImporting)
+    setIsExporting(initialState.isExporting)
   }, [])
 
   return {
@@ -128,6 +145,8 @@ export function useAppState() {
     tasks,
     currentTaskIndex,
     userCode,
+    projectFiles,
+    activeFileId,
     feedbackHistory,
     hintsUsed,
     exampleViewed,
@@ -136,6 +155,10 @@ export function useAppState() {
     isAskingFollowUp,
     isLoadingProjects,
     isAuthenticating,
+    isSavingFiles,
+    fileError,
+    isImporting,
+    isExporting,
     setUser,
     setCurrentProjectId,
     setProjectDescription,
@@ -143,6 +166,8 @@ export function useAppState() {
     setTasks,
     setCurrentTaskIndex,
     updateUserCode,
+    setProjectFiles,
+    setActiveFileId,
     appendFeedback,
     markTaskComplete,
     markTaskIncomplete,
@@ -155,6 +180,10 @@ export function useAppState() {
     setIsAskingFollowUp,
     setIsLoadingProjects,
     setIsAuthenticating,
+    setIsSavingFiles,
+    setFileError,
+    setIsImporting,
+    setIsExporting,
     setFeedbackHistory,
   }
 }

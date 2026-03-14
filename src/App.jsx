@@ -4,6 +4,7 @@ import CompletionScreen from './components/CompletionScreen'
 import Dashboard from './components/Dashboard'
 import Editor from './components/Editor'
 import FeedbackPanel from './components/FeedbackPanel'
+import FileTree from './components/FileTree'
 import HintBox from './components/HintBox'
 import Onboarding from './components/Onboarding'
 import ProgressBar from './components/ProgressBar'
@@ -20,15 +21,32 @@ import {
 } from './lib/buttonStyles'
 import {
   createProject,
+  createProjectFiles,
+  deleteProjectFile,
   markProjectIncomplete,
+  getProjectFiles,
   getProjectTasks,
   getUserProjects,
   markProjectComplete,
   markTaskComplete as markTaskCompleteInDb,
   markTaskIncomplete as markTaskIncompleteInDb,
+  replaceProjectFiles,
   saveTasks,
+  upsertProjectFile,
 } from './lib/db'
 import { detectLanguage } from './lib/detectLanguage'
+import {
+  buildExportPackage,
+  buildPreviewSrcDoc,
+  createDefaultProjectFiles,
+  editorLanguageFromFile,
+  fileNameFromPath,
+  normalizeProjectFiles,
+  parseImportPackage,
+  runtimeLanguageFromPath,
+  sanitizeFilePath,
+  toPersistedFiles,
+} from './lib/projectFiles'
 import { sanitizeLanguage } from './lib/runtimeUtils'
 
 function toText(value) {
@@ -64,6 +82,13 @@ function normalizeTask(task) {
   }
 }
 
+function isProjectFilesTableMissing(error) {
+  const message = error?.message || ''
+  return /project_files|schema cache|relation .*project_files|Could not find the 'project_files'|does not exist/i.test(
+    message,
+  )
+}
+
 function App() {
   const {
     user,
@@ -87,6 +112,8 @@ function App() {
     tasks,
     currentTaskIndex,
     userCode,
+    projectFiles,
+    activeFileId,
     feedbackHistory,
     hintsUsed,
     exampleViewed,
@@ -95,6 +122,10 @@ function App() {
     isAskingFollowUp,
     isLoadingProjects,
     isAuthenticating: isAuthenticatingState,
+    isSavingFiles,
+    fileError,
+    isImporting,
+    isExporting,
     setUser,
     setCurrentProjectId,
     setProjectDescription,
@@ -102,6 +133,8 @@ function App() {
     setTasks,
     setCurrentTaskIndex,
     updateUserCode,
+    setProjectFiles,
+    setActiveFileId,
     markTaskComplete,
     markTaskIncomplete,
     incrementHints,
@@ -113,18 +146,27 @@ function App() {
     setIsAskingFollowUp,
     setIsLoadingProjects,
     setIsAuthenticating,
+    setIsSavingFiles,
+    setFileError,
+    setIsImporting,
+    setIsExporting,
     setFeedbackHistory,
   } = useAppState()
 
   const [projects, setProjects] = useState([])
   const [screen, setScreen] = useState('dashboard')
   const [uiError, setUiError] = useState('')
+  const [previewSrcDoc, setPreviewSrcDoc] = useState('')
+  const [previewError, setPreviewError] = useState('')
   const [isCheckingBeforeComplete, setIsCheckingBeforeComplete] = useState(false)
   const [isMarkingTaskComplete, setIsMarkingTaskComplete] = useState(false)
   const lastCheckSignatureRef = useRef('')
   const lastCheckResultRef = useRef(null)
   const lastFollowUpSignatureRef = useRef('')
   const lastFollowUpResponseRef = useRef('')
+  const saveTimeoutRef = useRef(null)
+  const lastSavedFileContentRef = useRef({})
+  const importInputRef = useRef(null)
 
   useEffect(() => {
     setUser(user)
@@ -170,6 +212,90 @@ function App() {
     loadProjects(user.id, true)
   }, [loadProjects, resetApp, user])
 
+  const syncWorkspaceFiles = useCallback(
+    (files, preferredActiveFileId = null) => {
+      const normalizedFiles = normalizeProjectFiles(files)
+      setProjectFiles(normalizedFiles)
+
+      if (normalizedFiles.length === 0) {
+        setActiveFileId(null)
+        updateUserCode('')
+        lastSavedFileContentRef.current = {}
+        return
+      }
+
+      const activeFile =
+        normalizedFiles.find((file) => file.id === preferredActiveFileId) || normalizedFiles[0]
+
+      setActiveFileId(activeFile.id)
+      updateUserCode(activeFile.content || '')
+      lastSavedFileContentRef.current = Object.fromEntries(
+        normalizedFiles.map((file) => [file.id, file.content || '']),
+      )
+    },
+    [setActiveFileId, setProjectFiles, updateUserCode],
+  )
+
+  const bootstrapProjectFiles = useCallback(
+    async ({ projectId, ownerId, description, fallbackCode = '' }) => {
+      const defaultFiles = createDefaultProjectFiles(description, fallbackCode)
+      setFileError('')
+
+      try {
+        const { data: filesData, error: filesError } = await getProjectFiles(projectId)
+
+        if (filesError) {
+          if (isProjectFilesTableMissing(filesError)) {
+            setFileError(
+              'Project file storage is not configured in Supabase yet. Run the SQL setup block for project_files.',
+            )
+            syncWorkspaceFiles(defaultFiles)
+            return
+          }
+
+          console.error(filesError)
+          setFileError(filesError.message || 'Could not load project files.')
+          syncWorkspaceFiles(defaultFiles)
+          return
+        }
+
+        const normalizedExistingFiles = normalizeProjectFiles(filesData ?? [])
+        if (normalizedExistingFiles.length > 0) {
+          syncWorkspaceFiles(normalizedExistingFiles)
+          return
+        }
+
+        const initialPayload = toPersistedFiles(defaultFiles, projectId, ownerId)
+        const { data: createdFiles, error: createError } = await createProjectFiles(
+          projectId,
+          ownerId,
+          initialPayload,
+        )
+
+        if (createError) {
+          if (isProjectFilesTableMissing(createError)) {
+            setFileError(
+              'Project file storage is not configured in Supabase yet. Run the SQL setup block for project_files.',
+            )
+          } else {
+            console.error(createError)
+            setFileError(createError.message || 'Could not initialize project files.')
+          }
+
+          syncWorkspaceFiles(defaultFiles)
+          return
+        }
+
+        syncWorkspaceFiles(createdFiles ?? defaultFiles)
+      } catch (error) {
+        console.error(error)
+        setFileError(error.message || 'Could not initialize project files.')
+        syncWorkspaceFiles(defaultFiles)
+      }
+    },
+    [setFileError, syncWorkspaceFiles],
+  )
+
   const handleSignIn = useCallback(
     async (email, password) => {
       const { error } = await signIn(email, password)
@@ -207,6 +333,8 @@ function App() {
     setProjects([])
     setScreen('dashboard')
     setUiError('')
+    setPreviewSrcDoc('')
+    setPreviewError('')
     setAuthError(null)
   }, [resetApp, setAuthError, signOut])
 
@@ -226,6 +354,8 @@ function App() {
   const handleStartNewProject = useCallback(() => {
     resetApp()
     setUiError('')
+    setPreviewSrcDoc('')
+    setPreviewError('')
     setScreen('onboarding')
   }, [resetApp])
 
@@ -278,6 +408,14 @@ function App() {
         setTasks(normalizedTasks)
         setCurrentTaskIndex(0)
         resetTaskSupportState()
+        setPreviewSrcDoc('')
+        setPreviewError('')
+        await bootstrapProjectFiles({
+          projectId: projectData.id,
+          ownerId: user.id,
+          description,
+          fallbackCode: '',
+        })
 
         await loadProjects(user.id)
         setScreen('workspace')
@@ -290,6 +428,7 @@ function App() {
     },
     [
       generateRoadmap,
+      bootstrapProjectFiles,
       loadProjects,
       resetTaskSupportState,
       setCurrentProjectId,
@@ -324,6 +463,14 @@ function App() {
         setTasks(normalizedTasks)
         setCurrentTaskIndex(firstIncomplete === -1 ? 0 : firstIncomplete)
         resetTaskSupportState()
+        setPreviewSrcDoc('')
+        setPreviewError('')
+        await bootstrapProjectFiles({
+          projectId: project.id,
+          ownerId: appUser.id,
+          description: project.description,
+          fallbackCode: '',
+        })
 
         if (firstIncomplete === -1 && normalizedTasks.length > 0) {
           setScreen('completion')
@@ -339,12 +486,387 @@ function App() {
     },
     [
       resetTaskSupportState,
+      appUser,
+      bootstrapProjectFiles,
       setCurrentProjectId,
       setCurrentTaskIndex,
       setIsLoadingProjects,
       setProjectDescription,
       setSkillLevel,
       setTasks,
+    ],
+  )
+
+  const activeFile = useMemo(() => {
+    if (projectFiles.length === 0) {
+      return null
+    }
+
+    return projectFiles.find((file) => file.id === activeFileId) || projectFiles[0]
+  }, [activeFileId, projectFiles])
+
+  useEffect(() => {
+    if (projectFiles.length === 0) {
+      setActiveFileId(null)
+      updateUserCode('')
+      return
+    }
+
+    if (!activeFile) {
+      setActiveFileId(projectFiles[0].id)
+      updateUserCode(projectFiles[0].content || '')
+      return
+    }
+
+    updateUserCode(activeFile.content || '')
+  }, [activeFile, projectFiles, setActiveFileId, updateUserCode])
+
+  const persistProjectFile = useCallback(
+    async (fileToSave) => {
+      if (!currentProjectId || !appUser) {
+        return
+      }
+
+      const payload = toPersistedFiles([fileToSave], currentProjectId, appUser.id)[0]
+      if (!payload) {
+        return
+      }
+
+      setIsSavingFiles(true)
+      setFileError('')
+
+      try {
+        const { data, error } = await upsertProjectFile(payload)
+        if (error) {
+          if (isProjectFilesTableMissing(error)) {
+            setFileError(
+              'Project file storage is not configured in Supabase yet. Run the SQL setup block for project_files.',
+            )
+            return
+          }
+
+          console.error(error)
+          setFileError(error.message || 'Could not save file.')
+          return
+        }
+
+        const normalizedSaved = normalizeProjectFiles([data])[0]
+        if (!normalizedSaved) {
+          return
+        }
+
+        lastSavedFileContentRef.current[normalizedSaved.id] = normalizedSaved.content || ''
+        if (fileToSave.id !== normalizedSaved.id) {
+          delete lastSavedFileContentRef.current[fileToSave.id]
+        }
+
+        setProjectFiles((prev) =>
+          normalizeProjectFiles(
+            prev.map((file) =>
+              file.id === fileToSave.id || file.path === normalizedSaved.path
+                ? { ...file, ...normalizedSaved }
+                : file,
+            ),
+          ),
+        )
+
+        if (activeFileId === fileToSave.id && normalizedSaved.id !== fileToSave.id) {
+          setActiveFileId(normalizedSaved.id)
+        }
+      } catch (error) {
+        console.error(error)
+        setFileError(error.message || 'Could not save file.')
+      } finally {
+        setIsSavingFiles(false)
+      }
+    },
+    [
+      activeFileId,
+      appUser,
+      currentProjectId,
+      setActiveFileId,
+      setFileError,
+      setIsSavingFiles,
+      setProjectFiles,
+    ],
+  )
+
+  useEffect(() => {
+    if (!activeFile || !appUser || !currentProjectId) {
+      return undefined
+    }
+
+    const lastSaved = lastSavedFileContentRef.current[activeFile.id]
+    if (lastSaved === activeFile.content) {
+      return undefined
+    }
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    saveTimeoutRef.current = window.setTimeout(() => {
+      persistProjectFile(activeFile)
+    }, 700)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [activeFile, appUser, currentProjectId, persistProjectFile])
+
+  const handleSelectFile = useCallback(
+    (fileId) => {
+      const selected = projectFiles.find((file) => file.id === fileId)
+      if (!selected) {
+        return
+      }
+
+      setActiveFileId(fileId)
+      updateUserCode(selected.content || '')
+      setPreviewError('')
+    },
+    [projectFiles, setActiveFileId, updateUserCode],
+  )
+
+  const handleEditorChange = useCallback(
+    (nextCode) => {
+      if (!activeFile) {
+        return
+      }
+
+      setProjectFiles((prev) =>
+        prev.map((file) => (file.id === activeFile.id ? { ...file, content: nextCode } : file)),
+      )
+      updateUserCode(nextCode)
+    },
+    [activeFile, setProjectFiles, updateUserCode],
+  )
+
+  const handleCreateFile = useCallback(
+    async (rawPath) => {
+      const safePath = sanitizeFilePath(rawPath)
+      if (!safePath) {
+        setFileError('Invalid file path. Use letters, numbers, -, _, ., and folder segments.')
+        return
+      }
+
+      if (projectFiles.some((file) => file.path === safePath)) {
+        setFileError('A file with this path already exists.')
+        return
+      }
+
+      const nextFile = {
+        id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        path: safePath,
+        name: fileNameFromPath(safePath),
+        language: runtimeLanguageFromPath(safePath) || 'javascript',
+        content: '',
+        sort_index: projectFiles.length,
+      }
+
+      setFileError('')
+      setProjectFiles((prev) => normalizeProjectFiles([...prev, nextFile]))
+      setActiveFileId(nextFile.id)
+      updateUserCode('')
+      lastSavedFileContentRef.current[nextFile.id] = ''
+
+      await persistProjectFile(nextFile)
+    },
+    [persistProjectFile, projectFiles, setActiveFileId, setFileError, setProjectFiles, updateUserCode],
+  )
+
+  const handleRenameFile = useCallback(
+    async (fileId, rawPath) => {
+      const safePath = sanitizeFilePath(rawPath)
+      if (!safePath) {
+        setFileError('Invalid file path. Use letters, numbers, -, _, ., and folder segments.')
+        return
+      }
+
+      const target = projectFiles.find((file) => file.id === fileId)
+      if (!target) {
+        return
+      }
+
+      if (projectFiles.some((file) => file.id !== fileId && file.path === safePath)) {
+        setFileError('A file with this path already exists.')
+        return
+      }
+
+      const renamed = {
+        ...target,
+        path: safePath,
+        name: fileNameFromPath(safePath),
+        language: runtimeLanguageFromPath(safePath) || target.language || 'javascript',
+      }
+
+      setFileError('')
+      setProjectFiles((prev) =>
+        normalizeProjectFiles(prev.map((file) => (file.id === fileId ? renamed : file))),
+      )
+
+      await persistProjectFile(renamed)
+    },
+    [persistProjectFile, projectFiles, setFileError, setProjectFiles],
+  )
+
+  const handleDeleteFile = useCallback(
+    async (fileId) => {
+      if (projectFiles.length <= 1) {
+        setFileError('At least one file is required in the project.')
+        return
+      }
+
+      const target = projectFiles.find((file) => file.id === fileId)
+      if (!target) {
+        return
+      }
+
+      setFileError('')
+      setIsSavingFiles(true)
+
+      try {
+        if (!target.id.startsWith('local-')) {
+          const { error } = await deleteProjectFile(target.id)
+          if (error) {
+            console.error(error)
+            setFileError(error.message || 'Could not delete file.')
+            return
+          }
+        }
+
+        const remaining = normalizeProjectFiles(projectFiles.filter((file) => file.id !== fileId))
+        setProjectFiles(remaining)
+
+        const nextActive = remaining[0] || null
+        setActiveFileId(nextActive?.id || null)
+        updateUserCode(nextActive?.content || '')
+        delete lastSavedFileContentRef.current[fileId]
+      } catch (error) {
+        console.error(error)
+        setFileError(error.message || 'Could not delete file.')
+      } finally {
+        setIsSavingFiles(false)
+      }
+    },
+    [
+      projectFiles,
+      setActiveFileId,
+      setFileError,
+      setIsSavingFiles,
+      setProjectFiles,
+      updateUserCode,
+    ],
+  )
+
+  const handleRunPreview = useCallback(async () => {
+    setPreviewError('')
+
+    try {
+      const srcDoc = buildPreviewSrcDoc(projectFiles)
+      setPreviewSrcDoc(srcDoc)
+    } catch (error) {
+      console.error(error)
+      setPreviewSrcDoc('')
+      setPreviewError(error.message || 'Could not build preview.')
+    }
+  }, [projectFiles])
+
+  const handleExportProject = useCallback(async () => {
+    setIsExporting(true)
+    setFileError('')
+
+    try {
+      const payload = buildExportPackage({
+        projectId: currentProjectId,
+        projectDescription,
+        skillLevel,
+        tasks,
+        files: projectFiles,
+      })
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json',
+      })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `mentor-project-${currentProjectId || 'export'}.json`
+      link.click()
+      URL.revokeObjectURL(link.href)
+    } catch (error) {
+      console.error(error)
+      setFileError(error.message || 'Could not export project.')
+    } finally {
+      setIsExporting(false)
+    }
+  }, [
+    currentProjectId,
+    projectDescription,
+    projectFiles,
+    setFileError,
+    setIsExporting,
+    skillLevel,
+    tasks,
+  ])
+
+  const handleImportClick = useCallback(() => {
+    importInputRef.current?.click()
+  }, [])
+
+  const handleImportProject = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+
+      if (!file || !currentProjectId || !appUser) {
+        return
+      }
+
+      setIsImporting(true)
+      setFileError('')
+
+      try {
+        const raw = await file.text()
+        const parsed = parseImportPackage(raw)
+        if (parsed.error || !parsed.data) {
+          setFileError(parsed.error?.message || 'Invalid import file.')
+          return
+        }
+
+        const nextFiles = parsed.data.files
+        const payload = toPersistedFiles(nextFiles, currentProjectId, appUser.id)
+        const { data, error } = await replaceProjectFiles(currentProjectId, appUser.id, payload)
+
+        if (error) {
+          if (isProjectFilesTableMissing(error)) {
+            setFileError(
+              'Project file storage is not configured in Supabase yet. Imported files are available for this session only.',
+            )
+            syncWorkspaceFiles(nextFiles)
+            return
+          }
+
+          console.error(error)
+          setFileError(error.message || 'Could not import project files.')
+          return
+        }
+
+        syncWorkspaceFiles(data || nextFiles)
+      } catch (error) {
+        console.error(error)
+        setFileError(error.message || 'Could not import project file.')
+      } finally {
+        setIsImporting(false)
+      }
+    },
+    [
+      appUser,
+      currentProjectId,
+      setFileError,
+      setIsImporting,
+      syncWorkspaceFiles,
     ],
   )
 
@@ -355,6 +877,19 @@ function App() {
     [projectDescription, userCode],
   )
   const runtimeLanguage = lockedTaskLanguage || detectedLanguage
+  const editorLanguage = useMemo(
+    () => editorLanguageFromFile(activeFile, runtimeLanguage || 'javascript'),
+    [activeFile, runtimeLanguage],
+  )
+  const fileTabs = useMemo(
+    () =>
+      projectFiles.map((file) => ({
+        id: file.id,
+        label: file.name || file.path,
+      })),
+    [projectFiles],
+  )
+  const showHtmlPreview = runtimeLanguage === 'html'
 
   const completedCount = useMemo(
     () => tasks.filter((task) => task.completed).length,
@@ -626,6 +1161,8 @@ function App() {
   const handleBackToDashboard = useCallback(async () => {
     resetApp()
     setScreen('dashboard')
+    setPreviewSrcDoc('')
+    setPreviewError('')
 
     if (user) {
       await loadProjects(user.id)
@@ -768,6 +1305,29 @@ function App() {
           <button
             type="button"
             className={`${buttonSecondary} ${sizeSm}`}
+            onClick={handleExportProject}
+            disabled={isExporting || isImporting || projectFiles.length === 0}
+          >
+            {isExporting ? 'Exporting...' : 'Export JSON'}
+          </button>
+          <button
+            type="button"
+            className={`${buttonSecondary} ${sizeSm}`}
+            onClick={handleImportClick}
+            disabled={isImporting || isExporting}
+          >
+            {isImporting ? 'Importing...' : 'Import JSON'}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportProject}
+          />
+          <button
+            type="button"
+            className={`${buttonSecondary} ${sizeSm}`}
             onClick={handleBackToDashboard}
           >
             Dashboard
@@ -791,6 +1351,8 @@ function App() {
       {isCheckingBeforeComplete && <p>Checking code before completion...</p>}
       {isMarkingTaskComplete && !isCheckingBeforeComplete && <p>Updating task status...</p>}
       {isAskingFollowUp && <p>Getting mentor reply...</p>}
+      {isSavingFiles && <p>Saving project files...</p>}
+      {fileError && <p className="text-red-600">{fileError}</p>}
 
       <section className="grid grid-cols-1 lg:grid-cols-[300px_1fr_360px] gap-3">
         <Roadmap
@@ -820,19 +1382,52 @@ function App() {
             </button>
           </section>
 
-          <Editor
-            projectDescription={projectDescription}
-            value={userCode}
-            onChange={updateUserCode}
-            readOnly={Boolean(currentTask?.completed) && firstIncompleteIndex !== -1}
-            language={runtimeLanguage}
-          />
+          <section className="grid grid-cols-1 xl:grid-cols-[250px_1fr] gap-3">
+            <FileTree
+              files={projectFiles}
+              activeFileId={activeFile?.id || null}
+              onSelectFile={handleSelectFile}
+              onCreateFile={handleCreateFile}
+              onRenameFile={handleRenameFile}
+              onDeleteFile={handleDeleteFile}
+              isBusy={isSavingFiles || isImporting || isExporting}
+              errorMessage={fileError}
+            />
+
+            <Editor
+              projectDescription={projectDescription}
+              value={activeFile?.content || ''}
+              onChange={handleEditorChange}
+              readOnly={Boolean(currentTask?.completed) && firstIncompleteIndex !== -1}
+              language={editorLanguage}
+              tabs={fileTabs}
+              activeTabId={activeFile?.id || null}
+              onSelectTab={handleSelectFile}
+            />
+          </section>
+
           <RunConsole
             key={currentTask?.id || 'run-console'}
             code={userCode}
             detectedLanguage={detectedLanguage}
             lockedLanguage={lockedTaskLanguage}
+            onRunPreview={handleRunPreview}
           />
+          {showHtmlPreview ? (
+            <section className="border p-3 flex flex-col gap-2">
+              <h2 className="text-lg font-semibold">Live Preview</h2>
+              <p className="text-sm text-slate-700">
+                Click <strong>Refresh Preview</strong> in Run &amp; Output to update this panel.
+              </p>
+              {previewError ? <p className="text-red-600">{previewError}</p> : null}
+              <iframe
+                title="Project preview"
+                srcDoc={previewSrcDoc || '<p>Run preview to render your files.</p>'}
+                sandbox="allow-scripts"
+                className="w-full h-64 border"
+              />
+            </section>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-3">

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { buttonPrimary, buttonSecondary, sizeLg } from '../lib/buttonStyles'
+import RichTextMessage from './RichTextMessage'
 
 function FeedbackPanel({
   feedbackHistory,
@@ -40,9 +41,14 @@ function FeedbackPanel({
           <p>No feedback yet.</p>
         ) : (
           feedbackHistory.map((entry, index) => (
-            <p key={`${entry.role}-${index}`}>
-              <strong>{entry.role === 'ai' ? 'Mentor' : 'You'}:</strong> {entry.message}
-            </p>
+            <div key={`${entry.role}-${index}`} className="flex flex-col gap-1">
+              <strong>{entry.role === 'ai' ? 'Mentor' : 'You'}:</strong>
+              {entry.role === 'ai' ? (
+                <RichTextMessage text={entry.message} />
+              ) : (
+                <p className="whitespace-pre-wrap break-words">{entry.message}</p>
+              )}
+            </div>
           ))
         )}
       </div>

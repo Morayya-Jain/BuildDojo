@@ -246,7 +246,7 @@ function formatSqlResultSet(resultSet) {
   return lines.join('\n')
 }
 
-function RunConsole({ code, detectedLanguage, lockedLanguage = '' }) {
+function RunConsole({ code, detectedLanguage, lockedLanguage = '', onRunPreview }) {
   const [selectedLanguage, setSelectedLanguage] = useState('auto')
   const [outputLines, setOutputLines] = useState([])
   const [isRunning, setIsRunning] = useState(false)
@@ -271,14 +271,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '' }) {
   const isSql = resolvedLanguage === 'sql'
   const isHtml = isPreviewLanguage(resolvedLanguage)
   const isConsoleRunnable = canRunInConsole(resolvedLanguage)
-
-  const previewSrcDoc = useMemo(() => {
-    if (!isHtml) {
-      return ''
-    }
-
-    return code || '<p>No HTML yet.</p>'
-  }, [code, isHtml])
+  const canTriggerPreview = isHtml && typeof onRunPreview === 'function'
 
   const appendLine = useCallback((type, message) => {
     setOutputLines((prev) => [
@@ -559,6 +552,17 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '' }) {
 
   const handleRunCode = useCallback(async () => {
     try {
+      if (canTriggerPreview) {
+        await onRunPreview()
+        setOutputLines([
+          {
+            type: 'info',
+            message: 'Preview refreshed.',
+          },
+        ])
+        return
+      }
+
       const normalized = normalizeRunnableCode(code, resolvedLanguage)
 
       if (!normalized.ok) {
@@ -635,10 +639,12 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '' }) {
   }, [
     code,
     isJavascript,
+    canTriggerPreview,
     isPython,
     isSql,
     isTypescript,
     resolvedLanguage,
+    onRunPreview,
     runInWorker,
     runSqlCode,
   ])
@@ -679,6 +685,10 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '' }) {
         return 'Run TypeScript'
       }
 
+      if (canTriggerPreview) {
+        return 'Refresh Preview'
+      }
+
       return 'Run Code'
     }
 
@@ -687,7 +697,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '' }) {
     }
 
     return 'Running...'
-  }, [isPreparingRuntime, isPython, isRunning, isSql, isTypescript])
+  }, [canTriggerPreview, isPreparingRuntime, isPython, isRunning, isSql, isTypescript])
 
   const helperText = useMemo(() => {
     if (isJavascript) {
@@ -749,7 +759,7 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '' }) {
       ) : null}
 
       <div className="flex gap-2">
-        {isConsoleRunnable ? (
+        {isConsoleRunnable || canTriggerPreview ? (
           <button
             type="button"
             className={`${buttonPrimary} ${sizeSm}`}
@@ -805,15 +815,6 @@ function RunConsole({ code, detectedLanguage, lockedLanguage = '' }) {
             ))
           )}
         </div>
-      ) : null}
-
-      {isHtml ? (
-        <iframe
-          title="HTML preview"
-          srcDoc={previewSrcDoc}
-          sandbox="allow-scripts"
-          className="w-full h-52 border"
-        />
       ) : null}
     </section>
   )

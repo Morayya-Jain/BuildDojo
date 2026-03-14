@@ -273,7 +273,7 @@ No markdown. No extra keys.`
 
   const askFollowUp = useCallback(
     async (task, userCode, userQuestion, feedbackHistory) => {
-      const prompt = `You are a concise coding mentor in an ongoing conversation.\nCurrent task: ${task.description}\nUser's current code: ${userCode}\nConversation so far: ${JSON.stringify(feedbackHistory)}\nUser's new question: ${userQuestion}\nAnswer their question helpfully but do not give them complete working code.\nGive hints, ask one focused question back, and point them in the right direction.\nStart directly with the answer. No greeting, no preamble, no filler.\nKeep response under 80 words.`
+      const prompt = `You are a concise coding mentor in an ongoing conversation.\nCurrent task: ${task.description}\nUser's current code: ${userCode}\nConversation so far: ${JSON.stringify(feedbackHistory)}\nUser's new question: ${userQuestion}\nAnswer their question helpfully but do not give them complete working code.\nGive hints, ask one focused question back, and point them in the right direction.\nIf you include code, put it in fenced triple backticks with a language tag when possible.\nOnly include short illustrative snippets (max 6 lines), never a complete solution.\nStart directly with the answer. No greeting, no preamble, no filler.\nKeep response under 80 words.`
 
       const result = await callGemini(prompt, {
         temperature: 0.4,
