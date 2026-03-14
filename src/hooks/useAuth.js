@@ -91,7 +91,7 @@ export function useAuth() {
     }
   }, [])
 
-  const signUp = useCallback(async (email, password) => {
+  const signUp = useCallback(async (email, password, username = '') => {
     if (!supabase) {
       const error = supabaseInitError || new Error('Supabase is not configured.')
       setAuthError(error.message)
@@ -104,9 +104,21 @@ export function useAuth() {
 
     try {
       const emailRedirectTo = getEmailRedirectTo()
-      const signUpPayload = emailRedirectTo
-        ? { email, password, options: { emailRedirectTo } }
-        : { email, password }
+      const trimmedUsername = String(username ?? '').trim()
+      const signUpOptions = {}
+
+      if (emailRedirectTo) {
+        signUpOptions.emailRedirectTo = emailRedirectTo
+      }
+
+      if (trimmedUsername) {
+        signUpOptions.data = { username: trimmedUsername }
+      }
+
+      const signUpPayload =
+        Object.keys(signUpOptions).length > 0
+          ? { email, password, options: signUpOptions }
+          : { email, password }
       const { data, error } = await supabase.auth.signUp(signUpPayload)
 
       if (error) {
@@ -121,6 +133,39 @@ export function useAuth() {
       }
 
       setUser(data.session?.user ?? null)
+      return { data, error: null }
+    } catch (error) {
+      setAuthError(formatAuthError(error))
+      return { data: null, error }
+    } finally {
+      setIsAuthenticating(false)
+    }
+  }, [])
+
+  const signInWithGoogle = useCallback(async () => {
+    if (!supabase) {
+      const error = supabaseInitError || new Error('Supabase is not configured.')
+      setAuthError(error.message)
+      return { data: null, error }
+    }
+
+    setIsAuthenticating(true)
+    setAuthError(null)
+    setAuthInfo(null)
+
+    try {
+      const redirectTo = getEmailRedirectTo()
+      const signInPayload = redirectTo
+        ? { provider: 'google', options: { redirectTo } }
+        : { provider: 'google' }
+
+      const { data, error } = await supabase.auth.signInWithOAuth(signInPayload)
+
+      if (error) {
+        setAuthError(formatAuthError(error))
+        return { data: null, error }
+      }
+
       return { data, error: null }
     } catch (error) {
       setAuthError(formatAuthError(error))
@@ -242,6 +287,7 @@ export function useAuth() {
     setAuthInfo,
     signUp,
     signIn,
+    signInWithGoogle,
     signOut,
     resendConfirmation,
   }

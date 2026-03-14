@@ -110,6 +110,7 @@ function App() {
     authInfo,
     setAuthError,
     signIn,
+    signInWithGoogle,
     signOut,
     signUp,
     resendConfirmation,
@@ -452,8 +453,8 @@ function App() {
   )
 
   const handleSignUp = useCallback(
-    async (email, password) => {
-      const { error } = await signUp(email, password)
+    async (email, password, username) => {
+      const { error } = await signUp(email, password, username)
       if (error) {
         setUiError(error.message || 'Sign up failed.')
         return
@@ -463,6 +464,16 @@ function App() {
     },
     [signUp],
   )
+
+  const handleContinueWithGoogle = useCallback(async () => {
+    const { error } = await signInWithGoogle()
+    if (error) {
+      setUiError(error.message || 'Google authentication failed.')
+      return
+    }
+
+    setUiError('')
+  }, [signInWithGoogle])
 
   const handleLogOut = useCallback(async () => {
     const { error } = await signOut()
@@ -1508,6 +1519,7 @@ function App() {
       <AuthScreen
         onSignIn={handleSignIn}
         onSignUp={handleSignUp}
+        onContinueWithGoogle={handleContinueWithGoogle}
         onResendConfirmation={handleResendConfirmation}
         isAuthenticating={isAuthenticating}
         authError={authError || uiError}
