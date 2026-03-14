@@ -11,7 +11,6 @@ function Onboarding({
   projects = [],
   isLoadingProjects = false,
   onContinueProject = () => {},
-  onEditProfile = () => {},
   onLogOut = () => {},
   user,
   isGeneratingRoadmap,
@@ -135,28 +134,10 @@ function Onboarding({
             </div>
           </div>
 
-          <div className="mt-8">
-            <button
-              type="button"
-              className="flex h-10 w-full items-center justify-start rounded-xl border border-transparent px-3 text-sm font-medium text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 focus-visible:border-green-500 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={onEditProfile}
-              disabled={isGeneratingRoadmap}
-            >
-              Settings
-            </button>
-          </div>
       </aside>
 
       <div className="flex min-w-0 flex-col">
         <header className="flex flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-8">
-            <button
-              type="button"
-              className={actionButtonClass}
-              onClick={onEditProfile}
-              disabled={isGeneratingRoadmap}
-            >
-              Edit profile
-            </button>
             <button
               type="button"
               className={actionButtonClass}

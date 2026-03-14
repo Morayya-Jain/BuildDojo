@@ -535,15 +535,6 @@ function App() {
     setScreen('dashboard')
   }, [resetApp])
 
-  const handleEditProfile = useCallback(() => {
-    resetApp()
-    setUiError('')
-    setPreviewSrcDoc('')
-    setPreviewError('')
-    setIsEditingProfile(true)
-    setScreen('profile-onboarding')
-  }, [resetApp])
-
   const handleCompleteProfile = useCallback(
     async (profileInput) => {
       if (!user) {
@@ -1585,7 +1576,6 @@ function App() {
         projects={projects}
         isLoadingProjects={isLoadingProjects}
         onContinueProject={handleContinueProject}
-        onEditProfile={handleEditProfile}
         onLogOut={handleLogOut}
         user={appUser}
         isGeneratingRoadmap={isGeneratingRoadmap}
