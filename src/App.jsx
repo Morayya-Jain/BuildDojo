@@ -936,8 +936,6 @@ function App() {
     hashRestoreNonceRef.current += 1
     isHashRestoreInProgressRef.current = false
     hasAttemptedHashRestoreRef.current = true
-    replaceHashUrl('#/new-project')
-    lastNavigationIdentityRef.current = 'new-project'
     resetApp()
     setUiError('')
     setPreviewSrcDoc('')
@@ -1088,7 +1086,24 @@ function App() {
 
         if (saveError || !savedTaskData) {
           console.error(saveError)
-          setUiError(saveError?.message || 'Could not save tasks.')
+          const taskSaveMessage = saveError?.message || 'Could not save tasks.'
+
+          try {
+            const { error: rollbackError } = await deleteProjectInDb(projectData.id, user.id)
+            if (rollbackError) {
+              console.error(rollbackError)
+              setUiError(
+                `${taskSaveMessage} Project creation rollback also failed. The project may appear in Dashboard; please delete it and try again.`,
+              )
+            } else {
+              setUiError(taskSaveMessage)
+            }
+          } catch (rollbackError) {
+            console.error(rollbackError)
+            setUiError(
+              `${taskSaveMessage} Project creation rollback also failed. The project may appear in Dashboard; please delete it and try again.`,
+            )
+          }
           return
         }
 
@@ -1167,6 +1182,11 @@ function App() {
         }
 
         const normalizedTasks = (data ?? []).map(normalizeTask)
+        if (normalizedTasks.length === 0) {
+          setUiError('This project has no tasks yet. Regenerate or delete it from Dashboard.')
+          return
+        }
+
         const firstIncomplete = normalizedTasks.findIndex((task) => !task.completed)
         const resolvedProjectTitle = getProjectDisplayTitle(project)
         const fallbackTaskIndex = firstIncomplete === -1 ? 0 : firstIncomplete
@@ -2366,11 +2386,8 @@ function App() {
     setIsMarkingTaskComplete(true)
 
     try {
-      markTaskIncomplete(reopenTask.id)
-
       const { error: taskError } = await markTaskIncompleteInDb(reopenTask.id)
       if (taskError) {
-        markTaskComplete(reopenTask.id)
         console.error(taskError)
         setUiError(taskError.message || 'Could not reopen task in database.')
         return
@@ -2380,10 +2397,20 @@ function App() {
         const { error: projectError } = await markProjectIncomplete(currentProjectId)
         if (projectError) {
           console.error(projectError)
-          setUiError(projectError.message || 'Could not update project completion state.')
+          const { error: rollbackError } = await markTaskCompleteInDb(reopenTask.id)
+          if (rollbackError) {
+            console.error(rollbackError)
+            setUiError(
+              'Could not update project completion state, and task rollback failed. Please refresh and try again.',
+            )
+          } else {
+            setUiError(projectError.message || 'Could not update project completion state.')
+          }
+          return
         }
       }
 
+      markTaskIncomplete(reopenTask.id)
       setCurrentTaskIndex(reopenTaskIndex)
       resetTaskSupportState()
       setScreen('workspace')
@@ -2396,7 +2423,6 @@ function App() {
   }, [
     currentProjectId,
     isMarkingTaskComplete,
-    markTaskComplete,
     markTaskIncomplete,
     resetTaskSupportState,
     setCurrentTaskIndex,
@@ -2486,7 +2512,7 @@ function App() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-100 px-6 py-10">
         <section className="max-w-lg text-center">
-          <p className="text-xl font-semibold text-slate-900">Loading DojoBuild...</p>
+          <p className="text-xl font-semibold text-slate-900">Loading BuildDojo...</p>
           <p className="mt-2 text-sm text-slate-600">
             Verifying your session. If this takes too long, refresh and check Supabase env vars.
           </p>
@@ -2746,7 +2772,7 @@ function App() {
       <header className="border-b border-slate-200 bg-white px-4 py-4 md:px-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <img src={workspaceLogo} alt="DojoBuild" className="h-8 w-8 object-contain" />
+            <img src={workspaceLogo} alt="BuildDojo" className="h-8 w-8 object-contain" />
             <h1 className="text-xl font-semibold text-slate-900 md:text-2xl">
               {workspaceTitle}
             </h1>

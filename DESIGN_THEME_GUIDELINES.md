@@ -71,7 +71,7 @@ Apply these rules to all new and updated screens unless a specific feature expli
 
 - Keep copy concise and direct.
 - Branding block text for auth:
-  - Title: `DojoBuild`
+  - Title: `BuildDojo`
   - Subtitle: `Your AI dojo for learning how to build.`
 - Avoid marketing-heavy or decorative text that reduces clarity.
 

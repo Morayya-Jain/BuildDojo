@@ -357,10 +357,15 @@ function buildPreviewSrcDoc(files = []) {
     .trim()
 
   const jsContent = normalized
-    .filter(
-      (file) =>
-        file.path.toLowerCase().endsWith('.js') || file.path.toLowerCase().endsWith('.ts'),
-    )
+    .filter((file) => {
+      const lowerPath = file.path.toLowerCase()
+      return (
+        lowerPath.endsWith('.js') ||
+        lowerPath.endsWith('.mjs') ||
+        lowerPath.endsWith('.cjs') ||
+        lowerPath.endsWith('.jsx')
+      )
+    })
     .map((file) => file.content)
     .join('\n')
     .trim()

@@ -227,8 +227,8 @@ function Onboarding({
       <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <img src={logo} alt="DojoBuild logo" className="h-8 w-8 rounded-md object-cover" />
-            <p className="text-lg font-semibold text-slate-900 md:text-xl">DojoBuild</p>
+            <img src={logo} alt="BuildDojo logo" className="h-8 w-8 rounded-md object-cover" />
+            <p className="text-lg font-semibold text-slate-900 md:text-xl">BuildDojo</p>
           </div>
 
           <div className="flex flex-wrap gap-2 md:gap-3">
@@ -374,7 +374,7 @@ function Onboarding({
                         ref={descriptionInputRef}
                         value={description}
                         onChange={(event) => handleDescriptionChange(event.target.value)}
-                        placeholder="Search or ask a question..."
+                        placeholder="Describe what you want to build or ask your next coding question..."
                         rows={1}
                         className="w-full min-w-0 resize-none border-none bg-transparent py-2 text-lg leading-7 text-slate-900 outline-none placeholder:text-slate-500"
                         disabled={isGeneratingRoadmap}
@@ -382,7 +382,7 @@ function Onboarding({
                       />
                     </label>
 
-                    <div className="mt-4 flex flex-wrap gap-2 pl-8">
+                    <div className="mt-4 flex flex-wrap gap-2">
                       {SKILL_LEVEL_CHIPS.map((chip) => {
                         const isActive = chip.id === selectedSkillChip
 

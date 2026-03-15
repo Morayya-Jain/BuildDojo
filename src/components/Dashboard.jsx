@@ -46,8 +46,8 @@ function Dashboard({
       <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <img src={logo} alt="DojoBuild logo" className="h-8 w-8 rounded-md" />
-            <p className="text-lg font-semibold text-slate-900 md:text-xl">DojoBuild</p>
+            <img src={logo} alt="BuildDojo logo" className="h-8 w-8 rounded-md" />
+            <p className="text-lg font-semibold text-slate-900 md:text-xl">BuildDojo</p>
           </div>
 
           <div className="flex flex-wrap gap-2 md:gap-3">

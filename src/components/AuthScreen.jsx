@@ -52,11 +52,11 @@ function AuthScreen({
           <div className="flex flex-col items-center justify-center gap-8 border-b border-slate-200 bg-white px-6 py-12 text-center sm:px-10 lg:border-b-0 lg:border-r lg:py-16">
             <img
               src={logo}
-              alt="DojoBuild logo"
+              alt="BuildDojo logo"
               className="h-20 w-20 rounded-2xl border border-green-200 bg-white p-3 shadow-sm"
             />
             <div>
-              <h1 className="text-4xl font-bold tracking-tight text-slate-900">DojoBuild</h1>
+              <h1 className="text-4xl font-bold tracking-tight text-slate-900">BuildDojo</h1>
               <p className="mt-3 text-lg text-slate-700">
                 Your AI dojo for learning how to build.
               </p>

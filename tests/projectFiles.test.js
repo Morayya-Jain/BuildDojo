@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ZIP_IMPORT_LIMITS,
+  buildPreviewSrcDoc,
   createDefaultProjectFiles,
   createStarterFileForLanguage,
   findFirstFileByLanguage,
@@ -56,6 +57,27 @@ test('createDefaultProjectFiles keeps existing behavior when no preferred langua
   assert.equal(files.length, 1)
   assert.equal(files[0].path, 'main.js')
   assert.equal(files[0].language, 'javascript')
+})
+
+test('buildPreviewSrcDoc injects browser-executable JavaScript', () => {
+  const html = buildPreviewSrcDoc([
+    { path: 'index.html', content: '<!doctype html><html><body></body></html>' },
+    { path: 'script.js', content: 'console.log("ok")' },
+  ])
+
+  assert.match(html, /injected-preview/)
+  assert.match(html, /console\.log\("ok"\)/)
+})
+
+test('buildPreviewSrcDoc excludes TypeScript from injected script content', () => {
+  const html = buildPreviewSrcDoc([
+    { path: 'index.html', content: '<!doctype html><html><body></body></html>' },
+    { path: 'script.ts', content: 'const value: number = 1' },
+    { path: 'script.js', content: 'console.log("safe")' },
+  ])
+
+  assert.match(html, /console\.log\("safe"\)/)
+  assert.doesNotMatch(html, /const value: number = 1/)
 })
 
 test('findFirstFileByLanguage matches by extension-derived runtime', () => {

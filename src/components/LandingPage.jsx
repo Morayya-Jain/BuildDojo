@@ -69,8 +69,8 @@ function LandingPage({ onGetStarted = () => {} }) {
       <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6 md:px-8">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <img src={logo} alt="DojoBuild logo" className="h-8 w-8 rounded-md object-cover" />
-            <p className="text-lg font-semibold text-slate-900 md:text-xl">DojoBuild</p>
+            <img src={logo} alt="BuildDojo logo" className="h-8 w-8 rounded-md object-cover" />
+            <p className="text-lg font-semibold text-slate-900 md:text-xl">BuildDojo</p>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
@@ -142,7 +142,7 @@ function LandingPage({ onGetStarted = () => {} }) {
           <div className="mx-auto mt-10 w-full max-w-4xl md:mt-14">
             <img
               src={laptopImage}
-              alt="DojoBuild platform interface"
+              alt="BuildDojo platform interface"
               className="w-full drop-shadow-2xl"
             />
           </div>
@@ -152,9 +152,9 @@ function LandingPage({ onGetStarted = () => {} }) {
       <section id="landing-features" className="border-y border-slate-200 bg-slate-50 px-4 py-16 sm:px-6 md:px-8 md:py-24">
         <div className="mx-auto max-w-6xl">
           <div className="text-center">
-            <h2 className="text-3xl font-bold text-slate-900 md:text-4xl">Why DojoBuild</h2>
+            <h2 className="text-3xl font-bold text-slate-900 md:text-4xl">Why BuildDojo</h2>
             <p className="mx-auto mt-4 max-w-3xl text-base text-slate-600 md:text-xl">
-              Most AI tools build for you. DojoBuild teaches you how to build step-by-step.
+              Most AI tools build for you. BuildDojo teaches you how to build step-by-step.
             </p>
           </div>
 
@@ -190,7 +190,7 @@ function LandingPage({ onGetStarted = () => {} }) {
         <div className="mx-auto max-w-3xl">
           <h2 className="text-3xl font-bold text-slate-900 md:text-4xl">Ready to start building?</h2>
           <p className="mt-4 text-lg text-slate-600 md:text-xl">
-            Join DojoBuild and learn to create real projects with AI as your guide.
+            Join BuildDojo and learn to create real projects with AI as your guide.
           </p>
           <button
             type="button"
@@ -204,7 +204,7 @@ function LandingPage({ onGetStarted = () => {} }) {
       </section>
 
       <footer className="border-t border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-500 sm:px-6 md:px-8 md:text-sm">
-        <p>© 2026 DojoBuild. Build real skills, not just generated code.</p>
+        <p>© 2026 BuildDojo. Build real skills, not just generated code.</p>
       </footer>
     </main>
   )
