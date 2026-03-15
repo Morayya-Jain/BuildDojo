@@ -29,6 +29,33 @@ const CODE_CHECK_RESPONSE_SCHEMA = {
   },
   required: ['status', 'feedback', 'outputMatch', 'outputReason'],
 }
+const ROADMAP_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    skillLevel: {
+      type: 'STRING',
+      enum: ['beginner', 'intermediate', 'advanced', 'master'],
+    },
+    tasks: {
+      type: 'ARRAY',
+      minItems: 6,
+      maxItems: 6,
+      items: {
+        type: 'OBJECT',
+        properties: {
+          id: { type: 'STRING' },
+          title: { type: 'STRING' },
+          description: { type: 'STRING' },
+          hint: { type: 'STRING' },
+          exampleOutput: { type: 'STRING' },
+          language: { type: 'STRING' },
+        },
+        required: ['title', 'description', 'hint'],
+      },
+    },
+  },
+  required: ['skillLevel', 'tasks'],
+}
 const FOLLOW_UP_SUGGESTIONS_RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -90,6 +117,35 @@ const STAGE_ONE_STARTER_FALLBACKS = {
 
 function cleanJsonString(text) {
   return text.replace(/```json/gi, '').replace(/```/g, '').trim()
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function extractLooseJsonFieldValues(source, key, nextKey = '') {
+  const normalizedSource = toText(source)
+  if (!normalizedSource) {
+    return []
+  }
+
+  const escapedKey = escapeRegExp(key)
+  const escapedNextKey = nextKey ? escapeRegExp(nextKey) : ''
+  const pattern = nextKey
+    ? new RegExp(
+        `"${escapedKey}"\\s*:\\s*"([\\s\\S]*?)"\\s*,\\s*"${escapedNextKey}"\\s*:`,
+        'gi',
+      )
+    : new RegExp(`"${escapedKey}"\\s*:\\s*"([\\s\\S]*?)"\\s*(?:,|\\})`, 'gi')
+
+  const values = []
+  let match = pattern.exec(normalizedSource)
+  while (match) {
+    values.push(normalizeLooseJsonString(match[1] || ''))
+    match = pattern.exec(normalizedSource)
+  }
+
+  return values
 }
 
 function parseJsonObjectCandidate(text) {
@@ -548,9 +604,7 @@ export function normalizeClarifyingAnswers(clarifyingAnswers) {
   }
 }
 
-export function parseRoadmapGenerationResult(text) {
-  const parsed = parseJsonObjectCandidate(text)
-
+function normalizeRoadmapGenerationPayload(parsed) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Roadmap response is not a JSON object.')
   }
@@ -566,6 +620,125 @@ export function parseRoadmapGenerationResult(text) {
   return {
     skillLevel: normalizeProjectSkillLevel(parsed.skillLevel),
     tasks: parsed.tasks.map((task, index) => normalizeTaskWithStarterFallback(task, index)),
+  }
+}
+
+export function buildFallbackRoadmap(projectDescription, clarifyingAnswers) {
+  const normalizedAnswers = normalizeClarifyingAnswers(clarifyingAnswers)
+  const fallbackSkillLevel = normalizeProjectSkillLevel(normalizedAnswers.skillLevelPreference)
+  const projectLabel = compactText(projectDescription, 96) || 'your coding project'
+
+  const fallbackTasks = [
+    {
+      id: 'ai-task-1',
+      title: 'Set up the project foundation',
+      description: `Initialize the base structure for ${projectLabel}. Create the first files/folders and confirm your entry point can run before adding feature logic.`,
+      hint: 'Use one startup command, create your entry file, and run it once to verify setup.',
+      exampleOutput: '',
+      language: '',
+    },
+    {
+      id: 'ai-task-2',
+      title: 'Define core data and flow',
+      description:
+        'Identify the core data your app needs and map the smallest end-to-end user flow. Focus on one clear path that proves the project concept.',
+      hint: 'Write down the key inputs, outputs, and state changes for one happy-path flow.',
+      exampleOutput: '',
+      language: '',
+    },
+    {
+      id: 'ai-task-3',
+      title: 'Implement the first MVP feature',
+      description:
+        'Build one primary feature from the core flow and get it working with simple test data. Keep the implementation narrow and iterative.',
+      hint: 'Start with basic behavior first, then verify it manually with a quick check.',
+      exampleOutput: '',
+      language: '',
+    },
+    {
+      id: 'ai-task-4',
+      title: 'Add the second key capability',
+      description:
+        'Implement the next most important capability that makes the project useful in practice. Reuse existing structure rather than rewriting from scratch.',
+      hint: 'Add this in small slices and validate each slice before moving forward.',
+      exampleOutput: '',
+      language: '',
+    },
+    {
+      id: 'ai-task-5',
+      title: 'Handle errors and edge cases',
+      description:
+        'Improve reliability by adding validation, error handling, and edge-case coverage for your main flows. Make failures visible and understandable.',
+      hint: 'Test empty, invalid, and boundary inputs to confirm safe behavior.',
+      exampleOutput: '',
+      language: '',
+    },
+    {
+      id: 'ai-task-6',
+      title: 'Finalize and verify',
+      description:
+        'Review the full workflow, polish naming/structure, and verify the MVP can be demonstrated end to end. Capture short notes on what to build next.',
+      hint: 'Run through the complete flow once as if you are the user and note any rough spots.',
+      exampleOutput: '',
+      language: '',
+    },
+  ]
+
+  return normalizeRoadmapGenerationPayload({
+    skillLevel: fallbackSkillLevel,
+    tasks: fallbackTasks,
+  })
+}
+
+function parseRoadmapGenerationResultStrict(text) {
+  const parsed = parseJsonObjectCandidate(text)
+  return normalizeRoadmapGenerationPayload(parsed)
+}
+
+export function parseRoadmapGenerationResultLenient(text) {
+  const source = cleanJsonString(text)
+  const titles = extractLooseJsonFieldValues(source, 'title', 'description')
+  const descriptions = extractLooseJsonFieldValues(source, 'description', 'hint')
+  const hints = extractLooseJsonFieldValues(source, 'hint', 'exampleOutput')
+  const exampleOutputs = extractLooseJsonFieldValues(source, 'exampleOutput', 'language')
+  const languages = extractLooseJsonFieldValues(source, 'language')
+  const ids = extractLooseJsonFieldValues(source, 'id', 'title')
+
+  const taskCount = Math.min(titles.length, descriptions.length, hints.length)
+  if (taskCount !== 6) {
+    throw new Error('Roadmap response was malformed and could not be recovered.')
+  }
+
+  const skillLevelMatch =
+    source.match(/"skillLevel"\s*:\s*"(beginner|intermediate|advanced|master|hard)"/i) ||
+    source.match(/\b(beginner|intermediate|advanced|master|hard)\b/i)
+  const rawSkillLevel = toText(skillLevelMatch?.[1]).trim().toLowerCase()
+  const normalizedSkillLevel = normalizeModelSkillLevel(rawSkillLevel) || rawSkillLevel
+
+  const recoveredTasks = Array.from({ length: taskCount }, (_, index) => ({
+    id: ids[index] || `ai-task-${index + 1}`,
+    title: titles[index] || `Task ${index + 1}`,
+    description: descriptions[index] || '',
+    hint: hints[index] || '',
+    exampleOutput: exampleOutputs[index] || '',
+    language: languages[index] || '',
+  }))
+
+  return normalizeRoadmapGenerationPayload({
+    skillLevel: normalizedSkillLevel,
+    tasks: recoveredTasks,
+  })
+}
+
+export function parseRoadmapGenerationResult(text) {
+  try {
+    return parseRoadmapGenerationResultStrict(text)
+  } catch (strictError) {
+    try {
+      return parseRoadmapGenerationResultLenient(text)
+    } catch {
+      throw strictError
+    }
   }
 }
 
@@ -806,6 +979,9 @@ export function useGemini() {
       temperature: 0.7,
       maxOutputTokens: 1024,
       model,
+      responseMimeType: 'application/json',
+      responseSchema: ROADMAP_RESPONSE_SCHEMA,
+      retryCount: 1,
     })
     if (firstAttempt.error) {
       return { data: null, error: firstAttempt.error }
@@ -820,6 +996,9 @@ export function useGemini() {
         temperature: 0.7,
         maxOutputTokens: 1024,
         model,
+        responseMimeType: 'application/json',
+        responseSchema: ROADMAP_RESPONSE_SCHEMA,
+        retryCount: 1,
       })
 
       if (secondAttempt.error) {
@@ -830,11 +1009,10 @@ export function useGemini() {
         const roadmap = parseRoadmapGenerationResult(secondAttempt.data)
         return { data: roadmap, error: null }
       } catch (error) {
+        console.warn('Roadmap parsing failed after retry. Falling back to local roadmap.', error)
         return {
-          data: null,
-          error: new Error(
-            `Could not parse roadmap JSON after retry: ${error.message}`,
-          ),
+          data: buildFallbackRoadmap(projectDescription, clarifyingAnswers),
+          error: null,
         }
       }
     }

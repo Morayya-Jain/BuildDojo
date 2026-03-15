@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import LoadingSpinner from './LoadingSpinner'
 import {
   EXPERTISE_OPTIONS,
   INTEREST_OPTIONS,
@@ -440,7 +441,12 @@ function ProfileOnboarding({
               onClick={handleContinue}
             >
               {isSaving
-                ? 'Saving profile...'
+                ? (
+                  <span className="inline-flex items-center gap-2">
+                    <LoadingSpinner className="h-4 w-4 text-white" />
+                    Saving profile...
+                  </span>
+                  )
                 : stepIndex === steps.length - 1
                   ? 'Continue & Finish'
                   : 'Continue'}

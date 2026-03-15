@@ -1,11 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  buildFallbackRoadmap,
   buildCodeCheckPrompt,
   buildProjectTitlePrompt,
   buildRoadmapPrompt,
   normalizeClarifyingAnswers,
   parseRoadmapGenerationResult,
+  parseRoadmapGenerationResultLenient,
   selectGeminiModel,
 } from '../src/hooks/useGemini.js'
 
@@ -18,6 +20,36 @@ function buildTask(index) {
     exampleOutput: `Example ${index + 1}`,
     language: 'javascript',
   }
+}
+
+function buildMalformedRoadmapPayload() {
+  const tasks = Array.from({ length: 6 }, (_, index) => {
+    const taskNumber = index + 1
+    const description =
+      index === 0
+        ? 'Open the terminal and run "npm init -y"\nThen create src/main.js and verify it runs.'
+        : `Description ${taskNumber}`
+    const hint =
+      index === 0
+        ? 'Run "node src/main.js" from your terminal after setup, then confirm the starter output before moving on.'
+        : `Hint ${taskNumber}`
+
+    return `{
+      "id": "task-${taskNumber}",
+      "title": "Task ${taskNumber}",
+      "description": "${description}",
+      "hint": "${hint}",
+      "exampleOutput": "Example ${taskNumber}",
+      "language": "javascript"
+    }`
+  }).join(',\n')
+
+  return `{
+    "skillLevel": "beginner",
+    "tasks": [
+      ${tasks}
+    ]
+  }`
 }
 
 test('normalizeClarifyingAnswers applies defaults when values are missing', () => {
@@ -123,6 +155,35 @@ test('parseRoadmapGenerationResult preserves strong Stage 1 guidance', () => {
   const parsed = parseRoadmapGenerationResult(input)
   assert.equal(parsed.tasks[0].description, tasks[0].description)
   assert.equal(parsed.tasks[0].hint, tasks[0].hint)
+})
+
+test('parseRoadmapGenerationResultLenient recovers malformed roadmap JSON with unescaped quotes', () => {
+  const malformed = buildMalformedRoadmapPayload()
+
+  const parsed = parseRoadmapGenerationResultLenient(malformed)
+  assert.equal(parsed.tasks.length, 6)
+  assert.match(parsed.tasks[0].description, /npm init -y/i)
+  assert.match(parsed.tasks[0].hint, /node src\/main\.js/i)
+})
+
+test('parseRoadmapGenerationResult falls back to lenient parsing for malformed JSON', () => {
+  const malformed = buildMalformedRoadmapPayload()
+
+  const parsed = parseRoadmapGenerationResult(malformed)
+  assert.equal(parsed.tasks.length, 6)
+  assert.match(parsed.tasks[0].description, /npm init -y/i)
+})
+
+test('buildFallbackRoadmap returns deterministic 6-task roadmap when AI payload is unusable', () => {
+  const parsed = buildFallbackRoadmap('Build a weather dashboard app', {
+    skillLevelPreference: 'advanced',
+  })
+
+  assert.equal(parsed.skillLevel, 'advanced')
+  assert.equal(parsed.tasks.length, 6)
+  assert.equal(parsed.tasks[0].task_index, 0)
+  assert.match(parsed.tasks[0].description, /entry point|structure|setup/i)
+  assert.match(parsed.tasks[5].title, /finalize|verify/i)
 })
 
 test('buildRoadmapPrompt keeps no-solution guard and Stage 1 kickoff constraints', () => {

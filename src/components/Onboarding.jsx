@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import logo from '../assets/new-project-logo.png'
+import LoadingSpinner from './LoadingSpinner'
 import {
   deriveWelcomeName,
   getStarterTemplate,
@@ -469,7 +470,12 @@ function Onboarding({
                   {stepIndex === 0
                     ? 'Continue'
                     : isGeneratingRoadmap
-                      ? 'Generating roadmap...'
+                      ? (
+                        <span className="inline-flex items-center gap-2">
+                          <LoadingSpinner className="h-4 w-4 text-white" />
+                          Generating roadmap...
+                        </span>
+                        )
                       : 'Generate roadmap'}
                 </button>
               </div>
@@ -477,16 +483,14 @@ function Onboarding({
 
             {errorMessage ? <p className="mt-4 text-sm text-red-600">{errorMessage}</p> : null}
             {isGeneratingRoadmap ? (
-              <p className="mt-2 text-sm text-slate-600">Generating roadmap...</p>
+              <p className="mt-2 text-sm text-slate-600">
+                <span className="inline-flex items-center gap-2">
+                  <LoadingSpinner className="h-4 w-4 text-slate-600" />
+                  Generating roadmap...
+                </span>
+              </p>
             ) : null}
 
-            <div className="mt-10 flex justify-center">
-              <img
-                src={logo}
-                alt="DojoBuild mark"
-                className="h-12 w-12 rounded-2xl object-cover opacity-70"
-              />
-            </div>
           </div>
         </div>
       </div>
