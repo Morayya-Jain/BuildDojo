@@ -8,6 +8,7 @@ import {
 } from '../lib/homeFlow'
 import { getProjectDisplayTitle } from '../lib/projectTitle'
 import { LANGUAGE_LABELS } from '../lib/runtimeUtils'
+import { normalizeLanguageGroups } from '../hooks/useGemini'
 
 const SKILL_LEVEL_CHIPS = [
   { id: 'beginner', label: 'Beginner', value: 'beginner' },
@@ -222,7 +223,7 @@ function Onboarding({
         setSelectedLanguages([])
         setSelectedGroupIndex(null)
       } catch {
-        setSuggestedLanguages([['javascript'], ['python']])
+        setSuggestedLanguages(normalizeLanguageGroups([]))
         setSelectedLanguages([])
         setSelectedGroupIndex(null)
         setLanguageSuggestionError('Could not suggest languages. Please select manually.')

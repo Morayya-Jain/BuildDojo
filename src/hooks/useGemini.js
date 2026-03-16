@@ -1222,14 +1222,20 @@ const LANGUAGE_SUGGESTION_RESPONSE_SCHEMA = {
     languageGroups: {
       type: 'ARRAY',
       items: {
-        type: 'ARRAY',
-        items: {
-          type: 'STRING',
-          enum: [
-            'javascript', 'typescript', 'python', 'html', 'sql',
-            'java', 'csharp', 'go', 'rust', 'ruby', 'php', 'swift', 'kotlin',
-          ],
+        type: 'OBJECT',
+        properties: {
+          langs: {
+            type: 'ARRAY',
+            items: {
+              type: 'STRING',
+              enum: [
+                'javascript', 'typescript', 'python', 'html', 'sql',
+                'java', 'csharp', 'go', 'rust', 'ruby', 'php', 'swift', 'kotlin',
+              ],
+            },
+          },
         },
+        required: ['langs'],
       },
     },
   },
@@ -1267,7 +1273,7 @@ Constraints:
 - Never include a language that is clearly wrong for the domain.
 - Return ONLY valid raw JSON. No markdown, no backticks, no explanation.
 
-Schema: {"languageGroups": [["lang1", "lang2"], ["lang3"], ...]}`
+Schema: {"languageGroups": [{"langs": ["lang1", "lang2"]}, {"langs": ["lang3"]}, ...]}`
 }
 
 export function buildRoadmapPrompt(projectDescription, clarifyingAnswers, profileContext = null, languages = null) {
@@ -1459,14 +1465,19 @@ Return ONLY raw JSON with this exact schema:
 No markdown. No extra keys.`
 }
 
-// Minimal fallback when AI fails — just two universal options, not a full language dump.
-const FALLBACK_LANGUAGE_GROUPS = [['javascript'], ['python']]
+// Every supported language as a single-element group — used only when AI completely fails.
+const ALL_LANGUAGE_GROUPS = [
+  ['javascript'], ['typescript'], ['python'], ['html'],
+  ['java'], ['kotlin'], ['csharp'], ['go'], ['rust'],
+  ['ruby'], ['php'], ['swift'], ['sql'],
+]
 
 // Validates and sanitizes AI-returned language groups (array of arrays).
-// Falls back to a minimal set on invalid input — avoids flooding the UI with irrelevant options.
+// If the AI returned valid groups, passes them through (just sanitizes).
+// If the AI returned nothing, falls back to showing all languages so the user can pick.
 export function normalizeLanguageGroups(groups) {
   if (!Array.isArray(groups) || groups.length === 0) {
-    return FALLBACK_LANGUAGE_GROUPS
+    return ALL_LANGUAGE_GROUPS
   }
 
   const seen = new Set()
@@ -1484,7 +1495,7 @@ export function normalizeLanguageGroups(groups) {
     normalized.push(cleaned)
   }
 
-  return normalized.length > 0 ? normalized : FALLBACK_LANGUAGE_GROUPS
+  return normalized.length > 0 ? normalized : ALL_LANGUAGE_GROUPS
 }
 
 export function useGemini() {
@@ -1507,7 +1518,8 @@ export function useGemini() {
 
       try {
         const parsed = typeof result.data === 'string' ? JSON.parse(cleanJsonString(result.data)) : result.data
-        const groups = Array.isArray(parsed?.languageGroups) ? parsed.languageGroups : []
+        const rawGroups = Array.isArray(parsed?.languageGroups) ? parsed.languageGroups : []
+        const groups = rawGroups.map((g) => (Array.isArray(g?.langs) ? g.langs : Array.isArray(g) ? g : []))
         return { data: normalizeLanguageGroups(groups), error: null }
       } catch {
         return { data: normalizeLanguageGroups([]), error: null }
