@@ -1234,19 +1234,26 @@ const LANGUAGE_SUGGESTION_RESPONSE_SCHEMA = {
 }
 
 export function buildLanguageSuggestionPrompt(projectDescription) {
-  return `You are a coding mentor. Given a project description, determine which programming languages are needed to build it.
+  return `You are a coding mentor helping a user choose a programming language for their project.
 
 Project description: ${toText(projectDescription)}
 
-Rules:
-- Return ONLY the languages actually needed for this specific project.
-- Consider what languages naturally work together (e.g., HTML + JavaScript + CSS for web projects).
-- For simple CLI or scripting projects, return just the one language needed.
-- Only use values from this list: javascript, typescript, python, html, sql, java, csharp, go, rust, ruby, php, swift, kotlin.
-- Note: "html" includes CSS (HTML/CSS are grouped together).
-- Return ONLY valid raw JSON. No markdown. No backticks. No explanation.
+Your task: list EVERY language from the allowed list below that would be a reasonable choice for building this project.
 
-Schema: {"languages": ["language1", "language2"]}`
+Rules:
+- For general-purpose projects (calculators, games, CLI tools, utilities, algorithms, data structures, simulations): include options from multiple paradigms — scripting (python), web (javascript, typescript), JVM (java, kotlin), systems (go, rust, csharp), and mobile (swift) where applicable. Aim for 5–9 options.
+- For web UI / websites / visual frontend projects: include html, javascript, typescript. Do NOT include backend-only languages (python, java, go, rust, csharp, swift, kotlin, ruby, php) unless the description mentions a backend or full-stack context.
+- For backend API / server / microservice projects: include python, javascript, typescript, java, kotlin, go, rust, csharp, ruby, php as appropriate. Do NOT include html unless a web frontend is explicitly mentioned.
+- For data / analytics / ML projects: include python and sql. Optionally include javascript/typescript if a dashboard is mentioned.
+- For iOS / macOS apps: include swift as primary, optionally kotlin if cross-platform is mentioned.
+- For Android apps: include kotlin as primary, optionally java.
+- Only include sql if the project explicitly involves querying or storing data in a database.
+- Never include a language that is clearly wrong for the domain (e.g., html for an embedded systems project).
+- Only use values from this allowed list: javascript, typescript, python, html, sql, java, csharp, go, rust, ruby, php, swift, kotlin.
+- Note: "html" covers HTML/CSS together.
+- Return ONLY valid raw JSON. No markdown, no backticks, no explanation.
+
+Schema: {"languages": ["language1", "language2", ...]}`
 }
 
 export function buildRoadmapPrompt(projectDescription, clarifyingAnswers, profileContext = null, languages = null) {
@@ -1438,13 +1445,47 @@ Return ONLY raw JSON with this exact schema:
 No markdown. No extra keys.`
 }
 
+// Languages suitable for any general-purpose project (no html — that's web-UI specific).
+const GENERAL_PURPOSE_LANGUAGES = [
+  'javascript', 'typescript', 'python', 'java', 'kotlin', 'csharp', 'go', 'rust', 'swift',
+]
+
+// Given the AI's raw language list, expand it so general-purpose projects always offer a
+// diverse palette. Domain-specific projects (web/html, iOS, Android, data+sql) are kept narrow.
+export function expandLanguageSuggestions(languages) {
+  if (!Array.isArray(languages) || languages.length === 0) {
+    return GENERAL_PURPOSE_LANGUAGES
+  }
+
+  // Web project (html present) → frontend-only palette, keep as-is.
+  if (languages.includes('html')) return languages
+
+  // iOS-only (swift without kotlin) → keep narrow.
+  if (languages.every((l) => l === 'swift')) return languages
+
+  // Android/JVM (only java/kotlin) → keep narrow.
+  if (languages.every((l) => l === 'java' || l === 'kotlin')) return languages
+
+  // Data project (sql present alongside only python/js/ts) → keep narrow.
+  if (
+    languages.includes('sql') &&
+    languages.every((l) => ['python', 'sql', 'javascript', 'typescript'].includes(l))
+  ) {
+    return languages
+  }
+
+  // General purpose: merge AI picks with the full paradigm set so every family is represented.
+  const expanded = new Set([...GENERAL_PURPOSE_LANGUAGES, ...languages])
+  return [...expanded]
+}
+
 export function useGemini() {
   const suggestProjectLanguages = useCallback(async (projectDescription) => {
     try {
       const prompt = buildLanguageSuggestionPrompt(projectDescription)
       const result = await callGemini(prompt, {
         temperature: 0.3,
-        maxOutputTokens: 128,
+        maxOutputTokens: 256,
         model: GEMINI_MODEL_FLASH,
         responseMimeType: 'application/json',
         responseSchema: LANGUAGE_SUGGESTION_RESPONSE_SCHEMA,
@@ -1453,7 +1494,7 @@ export function useGemini() {
       })
 
       if (result.error) {
-        return { data: ['javascript'], error: result.error }
+        return { data: expandLanguageSuggestions([]), error: result.error }
       }
 
       try {
@@ -1461,12 +1502,12 @@ export function useGemini() {
         const languages = Array.isArray(parsed?.languages)
           ? parsed.languages.map((l) => sanitizeLanguage(l)).filter(Boolean)
           : []
-        return { data: languages.length > 0 ? languages : ['javascript'], error: null }
+        return { data: expandLanguageSuggestions(languages), error: null }
       } catch {
-        return { data: ['javascript'], error: null }
+        return { data: expandLanguageSuggestions([]), error: null }
       }
     } catch (error) {
-      return { data: ['javascript'], error }
+      return { data: expandLanguageSuggestions([]), error }
     }
   }, [])
 

@@ -455,9 +455,9 @@ function Onboarding({
                 </>
               ) : stepIndex === 1 ? (
                 <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
-                  <h2 className="text-xl font-semibold text-slate-900">Select project languages</h2>
+                  <h2 className="text-xl font-semibold text-slate-900">Choose your language</h2>
                   <p className="mt-1 text-sm text-slate-600">
-                    Based on your project, we recommend these languages. Toggle to adjust.
+                    All of these could work for your project. Pick the one(s) you want to use — selecting an incompatible language will automatically deselect conflicting ones.
                   </p>
 
                   {languageSuggestionError ? (
