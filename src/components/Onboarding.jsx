@@ -7,7 +7,7 @@ import {
   STARTER_PROMPT_CARDS,
 } from '../lib/homeFlow'
 import { getProjectDisplayTitle } from '../lib/projectTitle'
-import { LANGUAGE_LABELS, languagesConflict } from '../lib/runtimeUtils'
+import { LANGUAGE_LABELS } from '../lib/runtimeUtils'
 
 const SKILL_LEVEL_CHIPS = [
   { id: 'beginner', label: 'Beginner', value: 'beginner' },
@@ -126,8 +126,6 @@ function ProjectListIcon({ index }) {
   return <CodeIcon />
 }
 
-const ALL_LANGUAGE_IDS = Object.keys(LANGUAGE_LABELS).filter((id) => id !== 'auto')
-
 function Onboarding({
   onSubmit,
   onSuggestLanguages,
@@ -153,8 +151,9 @@ function Onboarding({
   const [experience, setExperience] = useState('')
   const [scope, setScope] = useState('')
   const [timeCommitment, setTimeCommitment] = useState('')
-  const [suggestedLanguages, setSuggestedLanguages] = useState([])
+  const [suggestedLanguages, setSuggestedLanguages] = useState([])  // string[][] (groups)
   const [selectedLanguages, setSelectedLanguages] = useState([])
+  const [selectedGroupIndex, setSelectedGroupIndex] = useState(null)
   const [isSuggestingLanguages, setIsSuggestingLanguages] = useState(false)
   const [languageSuggestionError, setLanguageSuggestionError] = useState('')
   const descriptionInputRef = useRef(null)
@@ -196,15 +195,14 @@ function Onboarding({
     }
   }
 
-  const handleToggleLanguage = (languageId) => {
-    setSelectedLanguages((prev) => {
-      if (prev.includes(languageId)) {
-        return prev.filter((id) => id !== languageId)
-      }
-      // Auto-deselect any currently-selected languages that conflict with the new pick.
-      const withoutConflicts = prev.filter((id) => !languagesConflict(languageId, id))
-      return [...withoutConflicts, languageId]
-    })
+  const handleSelectGroup = (groupIndex) => {
+    if (selectedGroupIndex === groupIndex) {
+      setSelectedGroupIndex(null)
+      setSelectedLanguages([])
+      return
+    }
+    setSelectedGroupIndex(groupIndex)
+    setSelectedLanguages(suggestedLanguages[groupIndex])
   }
 
   const handleSubmit = async (event) => {
@@ -219,12 +217,14 @@ function Onboarding({
       setLanguageSuggestionError('')
       try {
         const result = await onSuggestLanguages(trimmedDescription)
-        const languages = result?.data || ['javascript']
-        setSuggestedLanguages(languages)
-        setSelectedLanguages(languages)
+        const groups = result?.data || [['javascript']]
+        setSuggestedLanguages(groups)
+        setSelectedLanguages([])
+        setSelectedGroupIndex(null)
       } catch {
-        setSuggestedLanguages(ALL_LANGUAGE_IDS)
-        setSelectedLanguages(['javascript'])
+        setSuggestedLanguages([['javascript'], ['python'], ['java'], ['typescript']])
+        setSelectedLanguages([])
+        setSelectedGroupIndex(null)
         setLanguageSuggestionError('Could not suggest languages. Please select manually.')
       } finally {
         setIsSuggestingLanguages(false)
@@ -457,7 +457,7 @@ function Onboarding({
                 <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6">
                   <h2 className="text-xl font-semibold text-slate-900">Choose your language</h2>
                   <p className="mt-1 text-sm text-slate-600">
-                    All of these could work for your project. Pick the one(s) you want to use — selecting an incompatible language will automatically deselect conflicting ones.
+                    Pick the language stack for your project.
                   </p>
 
                   {languageSuggestionError ? (
@@ -472,30 +472,21 @@ function Onboarding({
                   ) : (
                     <>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        {suggestedLanguages.map((langId) => {
-                          const isActive = selectedLanguages.includes(langId)
-                          const wouldConflict =
-                            !isActive &&
-                            selectedLanguages.some((sel) => languagesConflict(langId, sel))
+                        {suggestedLanguages.map((group, index) => {
+                          const isActive = selectedGroupIndex === index
+                          const label = group.map((id) => LANGUAGE_LABELS[id] || id).join(' + ')
                           return (
                             <button
-                              key={langId}
+                              key={group.join('-')}
                               type="button"
-                              onClick={() => handleToggleLanguage(langId)}
-                              title={
-                                wouldConflict
-                                  ? `Selecting ${LANGUAGE_LABELS[langId] || langId} will deselect incompatible languages`
-                                  : undefined
-                              }
+                              onClick={() => handleSelectGroup(index)}
                               className={`inline-flex h-10 items-center rounded-full border px-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 ${
                                 isActive
                                   ? 'border-green-700 bg-green-600 text-white'
-                                  : wouldConflict
-                                    ? 'border-slate-200 bg-white text-slate-400 hover:border-amber-400 hover:text-slate-700'
-                                    : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
+                                  : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-50'
                               }`}
                             >
-                              {LANGUAGE_LABELS[langId] || langId}
+                              {label}
                               {isActive ? <span className="ml-1.5 text-sm">✓</span> : null}
                             </button>
                           )

@@ -1219,18 +1219,21 @@ Tailor task complexity to this skill level. Each task must be specific to the pr
 const LANGUAGE_SUGGESTION_RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
-    languages: {
+    languageGroups: {
       type: 'ARRAY',
       items: {
-        type: 'STRING',
-        enum: [
-          'javascript', 'typescript', 'python', 'html', 'sql',
-          'java', 'csharp', 'go', 'rust', 'ruby', 'php', 'swift', 'kotlin',
-        ],
+        type: 'ARRAY',
+        items: {
+          type: 'STRING',
+          enum: [
+            'javascript', 'typescript', 'python', 'html', 'sql',
+            'java', 'csharp', 'go', 'rust', 'ruby', 'php', 'swift', 'kotlin',
+          ],
+        },
       },
     },
   },
-  required: ['languages'],
+  required: ['languageGroups'],
 }
 
 export function buildLanguageSuggestionPrompt(projectDescription) {
@@ -1238,22 +1241,29 @@ export function buildLanguageSuggestionPrompt(projectDescription) {
 
 Project description: ${toText(projectDescription)}
 
-Your task: list EVERY language from the allowed list below that would be a reasonable choice for building this project.
+Your task: suggest 2–6 language OPTIONS the user can pick from. Each option is a group of 1–3 languages that naturally work together for this project. The user will pick exactly ONE group.
 
-Rules:
-- For general-purpose projects (calculators, games, CLI tools, utilities, algorithms, data structures, simulations): include options from multiple paradigms — scripting (python), web (javascript, typescript), JVM (java, kotlin), systems (go, rust, csharp), and mobile (swift) where applicable. Aim for 5–9 options.
-- For web UI / websites / visual frontend projects: include html, javascript, typescript. Do NOT include backend-only languages (python, java, go, rust, csharp, swift, kotlin, ruby, php) unless the description mentions a backend or full-stack context.
-- For backend API / server / microservice projects: include python, javascript, typescript, java, kotlin, go, rust, csharp, ruby, php as appropriate. Do NOT include html unless a web frontend is explicitly mentioned.
-- For data / analytics / ML projects: include python and sql. Optionally include javascript/typescript if a dashboard is mentioned.
-- For iOS / macOS apps: include swift as primary, optionally kotlin if cross-platform is mentioned.
-- For Android apps: include kotlin as primary, optionally java.
-- Only include sql if the project explicitly involves querying or storing data in a database.
-- Never include a language that is clearly wrong for the domain (e.g., html for an embedded systems project).
+Bundling rules:
+- Bundle languages that are typically used together for this type of project into one group. For example, a web frontend project should have a group ["html", "javascript"] because HTML and JS are used together, and another group ["html", "typescript"] for the TypeScript variant.
+- Languages that serve the SAME role (alternatives to each other) must be SEPARATE groups. For example, Python and Java are both general-purpose — put them in separate groups like ["python"] and ["java"], NOT together.
+- A group should contain languages that would ALL be used simultaneously in one project, not alternatives.
+- Keep each group to 1–3 languages maximum.
+
+Domain rules:
+- For web UI / frontend projects: offer groups like ["html", "javascript"], ["html", "typescript"]. Do NOT include backend-only languages unless full-stack is mentioned.
+- For backend API / server projects: offer separate groups for each viable language, e.g. ["python"], ["javascript"], ["typescript"], ["java"], ["go"], ["rust"]. Include ["python", "sql"] or ["javascript", "sql"] if database work is clearly involved.
+- For general-purpose projects (calculators, games, CLI tools, algorithms, simulations): offer 3–6 single-language groups from different paradigms, e.g. ["python"], ["javascript"], ["java"], ["go"], ["rust"].
+- For data / analytics / ML projects: offer ["python"], ["python", "sql"]. Optionally ["javascript"] if a dashboard is mentioned.
+- For iOS / macOS apps: offer ["swift"]. Optionally ["kotlin"] if cross-platform is mentioned.
+- For Android apps: offer ["kotlin"], optionally ["java"].
+- Only include sql in a group if the project explicitly involves querying or storing data in a database.
+- Never include a language that is clearly wrong for the domain.
 - Only use values from this allowed list: javascript, typescript, python, html, sql, java, csharp, go, rust, ruby, php, swift, kotlin.
 - Note: "html" covers HTML/CSS together.
+- Order groups with the most recommended option FIRST.
 - Return ONLY valid raw JSON. No markdown, no backticks, no explanation.
 
-Schema: {"languages": ["language1", "language2", ...]}`
+Schema: {"languageGroups": [["lang1", "lang2"], ["lang3"], ...]}`
 }
 
 export function buildRoadmapPrompt(projectDescription, clarifyingAnswers, profileContext = null, languages = null) {
@@ -1450,33 +1460,29 @@ const GENERAL_PURPOSE_LANGUAGES = [
   'javascript', 'typescript', 'python', 'java', 'kotlin', 'csharp', 'go', 'rust', 'swift',
 ]
 
-// Given the AI's raw language list, expand it so general-purpose projects always offer a
-// diverse palette. Domain-specific projects (web/html, iOS, Android, data+sql) are kept narrow.
-export function expandLanguageSuggestions(languages) {
-  if (!Array.isArray(languages) || languages.length === 0) {
-    return GENERAL_PURPOSE_LANGUAGES
+// Validates and sanitizes AI-returned language groups (array of arrays).
+// Falls back to single-language groups from GENERAL_PURPOSE_LANGUAGES on invalid input.
+export function normalizeLanguageGroups(groups) {
+  if (!Array.isArray(groups) || groups.length === 0) {
+    return GENERAL_PURPOSE_LANGUAGES.map((l) => [l])
   }
 
-  // Web project (html present) → frontend-only palette, keep as-is.
-  if (languages.includes('html')) return languages
+  const seen = new Set()
+  const normalized = []
 
-  // iOS-only (swift without kotlin) → keep narrow.
-  if (languages.every((l) => l === 'swift')) return languages
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue
+    const cleaned = group.map((l) => sanitizeLanguage(l)).filter(Boolean)
+    if (cleaned.length === 0) continue
 
-  // Android/JVM (only java/kotlin) → keep narrow.
-  if (languages.every((l) => l === 'java' || l === 'kotlin')) return languages
+    const key = [...cleaned].sort().join(',')
+    if (seen.has(key)) continue
+    seen.add(key)
 
-  // Data project (sql present alongside only python/js/ts) → keep narrow.
-  if (
-    languages.includes('sql') &&
-    languages.every((l) => ['python', 'sql', 'javascript', 'typescript'].includes(l))
-  ) {
-    return languages
+    normalized.push(cleaned)
   }
 
-  // General purpose: merge AI picks with the full paradigm set so every family is represented.
-  const expanded = new Set([...GENERAL_PURPOSE_LANGUAGES, ...languages])
-  return [...expanded]
+  return normalized.length > 0 ? normalized : GENERAL_PURPOSE_LANGUAGES.map((l) => [l])
 }
 
 export function useGemini() {
@@ -1494,20 +1500,18 @@ export function useGemini() {
       })
 
       if (result.error) {
-        return { data: expandLanguageSuggestions([]), error: result.error }
+        return { data: normalizeLanguageGroups([]), error: result.error }
       }
 
       try {
         const parsed = typeof result.data === 'string' ? JSON.parse(cleanJsonString(result.data)) : result.data
-        const languages = Array.isArray(parsed?.languages)
-          ? parsed.languages.map((l) => sanitizeLanguage(l)).filter(Boolean)
-          : []
-        return { data: expandLanguageSuggestions(languages), error: null }
+        const groups = Array.isArray(parsed?.languageGroups) ? parsed.languageGroups : []
+        return { data: normalizeLanguageGroups(groups), error: null }
       } catch {
-        return { data: expandLanguageSuggestions([]), error: null }
+        return { data: normalizeLanguageGroups([]), error: null }
       }
     } catch (error) {
-      return { data: expandLanguageSuggestions([]), error }
+      return { data: normalizeLanguageGroups([]), error }
     }
   }, [])
 
