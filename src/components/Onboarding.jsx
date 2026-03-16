@@ -222,7 +222,7 @@ function Onboarding({
         setSelectedLanguages([])
         setSelectedGroupIndex(null)
       } catch {
-        setSuggestedLanguages([['javascript'], ['python'], ['java'], ['typescript']])
+        setSuggestedLanguages([['javascript'], ['python']])
         setSelectedLanguages([])
         setSelectedGroupIndex(null)
         setLanguageSuggestionError('Could not suggest languages. Please select manually.')

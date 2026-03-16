@@ -1798,7 +1798,7 @@ function App() {
       if (!isFileAllowedByLanguageLock(safePath, projectLanguages)) {
         const allowed = getAllowedExtensions(projectLanguages)
         setFileError(
-          `This file type is not allowed. Project languages: ${projectLanguages.join(', ')}. Allowed extensions: ${allowed.join(', ')}`,
+          `This file type is not allowed. Project languages: ${(projectLanguages || []).join(', ')}. Allowed extensions: ${allowed.join(', ')}`,
         )
         return
       }
@@ -1853,7 +1853,7 @@ function App() {
       if (!isFileAllowedByLanguageLock(safePath, projectLanguages)) {
         const allowed = getAllowedExtensions(projectLanguages)
         setFileError(
-          `This file type is not allowed. Project languages: ${projectLanguages.join(', ')}. Allowed extensions: ${allowed.join(', ')}`,
+          `This file type is not allowed. Project languages: ${(projectLanguages || []).join(', ')}. Allowed extensions: ${allowed.join(', ')}`,
         )
         return
       }

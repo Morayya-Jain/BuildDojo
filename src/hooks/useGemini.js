@@ -1241,26 +1241,30 @@ export function buildLanguageSuggestionPrompt(projectDescription) {
 
 Project description: ${toText(projectDescription)}
 
+CRITICAL: Only suggest languages that are genuinely appropriate for this SPECIFIC project. Analyze the description carefully and match the domain. Do NOT pad with unrelated languages.
+
 Your task: suggest 2–6 language OPTIONS the user can pick from. Each option is a group of 1–3 languages that naturally work together for this project. The user will pick exactly ONE group.
 
-Bundling rules:
-- Bundle languages that are typically used together for this type of project into one group. For example, a web frontend project should have a group ["html", "javascript"] because HTML and JS are used together, and another group ["html", "typescript"] for the TypeScript variant.
-- Languages that serve the SAME role (alternatives to each other) must be SEPARATE groups. For example, Python and Java are both general-purpose — put them in separate groups like ["python"] and ["java"], NOT together.
-- A group should contain languages that would ALL be used simultaneously in one project, not alternatives.
-- Keep each group to 1–3 languages maximum.
+Domain rules (apply FIRST — these override everything else):
+- Web UI / frontend / website / web page / landing page: ONLY return groups containing html, javascript, and/or typescript. Example: [["html", "javascript"], ["html", "typescript"]]. Do NOT include python, java, go, rust, swift, kotlin, csharp, ruby, php, or sql.
+- Backend API / server / microservice: ONLY return groups from server-appropriate languages. Example: [["python"], ["javascript"], ["typescript"], ["go"], ["java"]]. Add sql to a group ONLY if database work is explicitly mentioned. Do NOT include html or swift.
+- Data / analytics / ML / AI: ONLY return [["python"], ["python", "sql"]]. Optionally add ["javascript"] if a dashboard or visualization is mentioned. Do NOT include java, go, rust, swift, kotlin, csharp.
+- iOS / macOS native app: ONLY return [["swift"]]. Add ["kotlin"] only if cross-platform is explicitly mentioned.
+- Android native app: ONLY return [["kotlin"]], optionally [["java"]].
+- Full-stack / web app with backend: Return groups like [["html", "javascript"], ["html", "typescript"], ["python"], ["javascript"]]. Mix frontend and backend options as separate groups.
+- General-purpose (calculators, games, CLI tools, algorithms, simulations, utilities): Return 3–6 single-language groups from relevant paradigms. Example: [["python"], ["javascript"], ["java"], ["go"]].
 
-Domain rules:
-- For web UI / frontend projects: offer groups like ["html", "javascript"], ["html", "typescript"]. Do NOT include backend-only languages unless full-stack is mentioned.
-- For backend API / server projects: offer separate groups for each viable language, e.g. ["python"], ["javascript"], ["typescript"], ["java"], ["go"], ["rust"]. Include ["python", "sql"] or ["javascript", "sql"] if database work is clearly involved.
-- For general-purpose projects (calculators, games, CLI tools, algorithms, simulations): offer 3–6 single-language groups from different paradigms, e.g. ["python"], ["javascript"], ["java"], ["go"], ["rust"].
-- For data / analytics / ML projects: offer ["python"], ["python", "sql"]. Optionally ["javascript"] if a dashboard is mentioned.
-- For iOS / macOS apps: offer ["swift"]. Optionally ["kotlin"] if cross-platform is mentioned.
-- For Android apps: offer ["kotlin"], optionally ["java"].
-- Only include sql in a group if the project explicitly involves querying or storing data in a database.
-- Never include a language that is clearly wrong for the domain.
-- Only use values from this allowed list: javascript, typescript, python, html, sql, java, csharp, go, rust, ruby, php, swift, kotlin.
-- Note: "html" covers HTML/CSS together.
+Bundling rules:
+- Bundle languages that are typically used TOGETHER in one project into one group (e.g., ["html", "javascript"] for web).
+- Languages that serve the SAME role (alternatives) must be SEPARATE groups (e.g., ["python"] and ["java"] as separate groups, NOT together).
+- Each group = languages the user would use simultaneously, not choices between them.
+- Keep each group to 1–3 languages maximum.
 - Order groups with the most recommended option FIRST.
+
+Constraints:
+- Only use values from: javascript, typescript, python, html, sql, java, csharp, go, rust, ruby, php, swift, kotlin.
+- "html" covers HTML/CSS together.
+- Never include a language that is clearly wrong for the domain.
 - Return ONLY valid raw JSON. No markdown, no backticks, no explanation.
 
 Schema: {"languageGroups": [["lang1", "lang2"], ["lang3"], ...]}`
@@ -1455,16 +1459,14 @@ Return ONLY raw JSON with this exact schema:
 No markdown. No extra keys.`
 }
 
-// Languages suitable for any general-purpose project (no html — that's web-UI specific).
-const GENERAL_PURPOSE_LANGUAGES = [
-  'javascript', 'typescript', 'python', 'java', 'kotlin', 'csharp', 'go', 'rust', 'swift',
-]
+// Minimal fallback when AI fails — just two universal options, not a full language dump.
+const FALLBACK_LANGUAGE_GROUPS = [['javascript'], ['python']]
 
 // Validates and sanitizes AI-returned language groups (array of arrays).
-// Falls back to single-language groups from GENERAL_PURPOSE_LANGUAGES on invalid input.
+// Falls back to a minimal set on invalid input — avoids flooding the UI with irrelevant options.
 export function normalizeLanguageGroups(groups) {
   if (!Array.isArray(groups) || groups.length === 0) {
-    return GENERAL_PURPOSE_LANGUAGES.map((l) => [l])
+    return FALLBACK_LANGUAGE_GROUPS
   }
 
   const seen = new Set()
@@ -1482,7 +1484,7 @@ export function normalizeLanguageGroups(groups) {
     normalized.push(cleaned)
   }
 
-  return normalized.length > 0 ? normalized : GENERAL_PURPOSE_LANGUAGES.map((l) => [l])
+  return normalized.length > 0 ? normalized : FALLBACK_LANGUAGE_GROUPS
 }
 
 export function useGemini() {

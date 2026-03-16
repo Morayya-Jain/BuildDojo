@@ -8,20 +8,19 @@ test('normalizeLanguageGroups preserves valid groups', () => {
   assert.deepEqual(result, [['javascript', 'html'], ['python'], ['java']])
 })
 
-test('normalizeLanguageGroups returns fallback for empty input', () => {
+test('normalizeLanguageGroups returns minimal fallback for empty input', () => {
   const result = normalizeLanguageGroups([])
-  assert.ok(result.length > 0, 'should return fallback groups')
-  assert.ok(result.every((g) => Array.isArray(g) && g.length === 1), 'fallback groups should be single-element')
+  assert.deepEqual(result, [['javascript'], ['python']])
 })
 
-test('normalizeLanguageGroups returns fallback for null input', () => {
+test('normalizeLanguageGroups returns minimal fallback for null input', () => {
   const result = normalizeLanguageGroups(null)
-  assert.ok(result.length > 0, 'should return fallback groups')
+  assert.deepEqual(result, [['javascript'], ['python']])
 })
 
-test('normalizeLanguageGroups returns fallback for non-array input', () => {
+test('normalizeLanguageGroups returns minimal fallback for non-array input', () => {
   const result = normalizeLanguageGroups('javascript')
-  assert.ok(result.length > 0, 'should return fallback groups')
+  assert.deepEqual(result, [['javascript'], ['python']])
 })
 
 test('normalizeLanguageGroups strips invalid language IDs', () => {
@@ -54,9 +53,8 @@ test('normalizeLanguageGroups skips non-array group entries', () => {
   assert.deepEqual(result, [['python'], ['java']])
 })
 
-test('normalizeLanguageGroups returns fallback when all groups become empty', () => {
+test('normalizeLanguageGroups returns minimal fallback when all groups become empty', () => {
   const input = [['fakeLang'], ['anotherFake']]
   const result = normalizeLanguageGroups(input)
-  assert.ok(result.length > 0, 'should return fallback groups')
-  assert.ok(result.every((g) => Array.isArray(g) && g.length === 1), 'fallback groups should be single-element')
+  assert.deepEqual(result, [['javascript'], ['python']])
 })
