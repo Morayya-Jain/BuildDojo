@@ -157,6 +157,7 @@ function Onboarding({
   const [selectedGroupIndex, setSelectedGroupIndex] = useState(null)
   const [isSuggestingLanguages, setIsSuggestingLanguages] = useState(false)
   const [languageSuggestionError, setLanguageSuggestionError] = useState('')
+  const [hasInteractedWithLanguages, setHasInteractedWithLanguages] = useState(false)
   const descriptionInputRef = useRef(null)
 
   const welcomeName = useMemo(() => deriveWelcomeName(user), [user])
@@ -197,6 +198,7 @@ function Onboarding({
   }
 
   const handleSelectGroup = (groupIndex) => {
+    setHasInteractedWithLanguages(true)
     if (selectedGroupIndex === groupIndex) {
       setSelectedGroupIndex(null)
       setSelectedLanguages([])
@@ -497,7 +499,7 @@ function Onboarding({
                         })}
                       </div>
 
-                      {selectedLanguages.length === 0 ? (
+                      {hasInteractedWithLanguages && selectedLanguages.length === 0 ? (
                         <p className="mt-2 text-sm text-red-600">Select at least one language to continue.</p>
                       ) : null}
                     </>

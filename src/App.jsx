@@ -2535,8 +2535,7 @@ function App() {
         validationResult = checkResult.data
       }
 
-      const hasPassingValidation =
-        validationResult?.status === 'PASS' && validationResult?.outputMatch === true
+      const hasPassingValidation = validationResult?.status === 'PASS'
 
       if (!hasPassingValidation) {
         const validationDetails = [

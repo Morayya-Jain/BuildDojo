@@ -1407,11 +1407,11 @@ export function buildCodeCheckPrompt(task, userCode, profileContext = null) {
   const profileBlock = buildProfilePromptBlock(profileContext)
 
   return `You are a strict coding mentor and code evaluator.
-Evaluate whether the user's code satisfies the current task and expected output.
+Evaluate whether the user's code satisfies the current task requirements.
 
 Task title: ${toText(task?.title)}
 Task description: ${toText(task?.description)}
-Expected example output (may be empty): ${exampleOutput || 'N/A'}
+Illustrative example output (one valid approach, may be empty): ${exampleOutput || 'N/A'}
 ${profileBlock}
 
 User code:
@@ -1421,10 +1421,13 @@ Rules:
 - Never provide complete working code or a full-file answer.
 - If you include code, keep each snippet at ${MENTOR_SNIPPET_MAX_LINES} lines max and only include minimal illustrative fragments.
 - Be specific and concise.
-- If expected example output is provided, check if behavior/output aligns with it.
-- If expected example output is not provided, set outputMatch to true and explain that in outputReason.
-- Return status PASS only when task requirements are satisfied.
-- Return status FAIL if anything required is missing or incorrect.
+- The example output above is ONE illustrative approach, not the only acceptable solution. Different but functionally equivalent approaches are equally valid.
+- Set outputMatch to true if the user's code achieves the same functional goal as the example, even if the data structure, format, or approach differs (e.g. a 2D list vs a 1D list for a grid are both valid).
+- Set outputMatch to false ONLY if the user's code is functionally wrong or missing required behavior described in the task.
+- If no example output is provided, set outputMatch to true and explain that in outputReason.
+- Return status PASS only when the task requirements (from the title and description) are satisfied.
+- Return status FAIL if anything required by the task description is missing or incorrect.
+- status and outputMatch should be consistent: if the task requirements are met, both should indicate success.
 
 Return ONLY raw JSON with this exact schema:
 {"status":"PASS|FAIL","feedback":"string","outputMatch":true|false,"outputReason":"string"}

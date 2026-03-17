@@ -430,6 +430,24 @@ test('buildCodeCheckPrompt keeps short-snippet and no-full-solution guardrails',
   assert.match(prompt, /Never provide complete working code or a full-file answer/i)
   assert.match(prompt, /keep each snippet at 6 lines max/i)
   assert.match(prompt, /Return ONLY raw JSON with this exact schema/i)
+  assert.match(prompt, /ONE illustrative approach/i)
+  assert.match(prompt, /functionally equivalent/i)
+})
+
+test('buildCodeCheckPrompt labels example output as illustrative when provided', () => {
+  const prompt = buildCodeCheckPrompt(
+    {
+      title: 'Create the game board',
+      description: 'Represent a 3x3 grid using a list or 2D list',
+      exampleOutput: "[' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ']",
+    },
+    'board = [[" ", " ", " "], [" ", " ", " "], [" ", " ", " "]]',
+    null,
+  )
+
+  assert.match(prompt, /Illustrative example output \(one valid approach/i)
+  assert.match(prompt, /not the only acceptable solution/i)
+  assert.match(prompt, /functionally wrong or missing required behavior/i)
 })
 
 test('buildProjectTitlePrompt enforces concise plain-text title output', () => {
