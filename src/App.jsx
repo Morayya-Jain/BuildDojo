@@ -412,6 +412,7 @@ function App() {
   const [preAuthScreen, setPreAuthScreen] = useState('landing')
   const [authInitialMode, setAuthInitialMode] = useState('login')
   const [uiError, setUiError] = useState('')
+  const [feedbackError, setFeedbackError] = useState('')
   const [previewSrcDoc, setPreviewSrcDoc] = useState('')
   const [previewError, setPreviewError] = useState('')
   const [fileNotice, setFileNotice] = useState('')
@@ -436,6 +437,7 @@ function App() {
   const lastCheckResultRef = useRef(null)
   const lastCheckSuggestionsRef = useRef([])
   const lastCheckSuggestionsNoticeRef = useRef('')
+  const currentSessionHistoryRef = useRef([])
   const saveTimeoutRef = useRef(null)
   const fileNoticeTimeoutRef = useRef(null)
   const lastSavedFileContentRef = useRef({})
@@ -1246,6 +1248,7 @@ function App() {
         setTasks(normalizedTasks)
         setCurrentTaskIndex(0)
         resetTaskSupportState()
+        setFeedbackError('')
         setPreviewSrcDoc('')
         setPreviewError('')
         const initialTaskLanguage = sanitizeLanguage(normalizedTasks[0]?.language)
@@ -1371,9 +1374,10 @@ function App() {
           const firstIncomplete = normalizedReplacedTasks.findIndex((task) => !task.completed)
           setCurrentTaskIndex(firstIncomplete === -1 ? 0 : firstIncomplete)
           resetTaskSupportState()
+          setFeedbackError('')
         }
 
-        const { error: markIncompleteError } = await markProjectIncomplete(project.id)
+        const { error: markIncompleteError } = await markProjectIncomplete(project.id, appUser?.id)
         if (markIncompleteError) {
           console.error(markIncompleteError)
           setUiError(
@@ -1393,6 +1397,7 @@ function App() {
       }
     },
     [
+      appUser?.id,
       currentProjectId,
       generateRoadmap,
       profile,
@@ -1475,6 +1480,7 @@ function App() {
         setTasks(normalizedTasks)
         setCurrentTaskIndex(nextTaskIndex)
         resetTaskSupportState()
+        setFeedbackError('')
         setPreviewSrcDoc('')
         setPreviewError('')
 
@@ -1908,7 +1914,7 @@ function App() {
 
       try {
         if (!isProjectFilesSessionOnly && !target.id.startsWith('local-')) {
-          const { error } = await deleteProjectFile(target.id)
+          const { error } = await deleteProjectFile(target.id, appUser?.id)
           if (error) {
             console.error(error)
             handleProjectFilesStorageError(error, {
@@ -1933,6 +1939,7 @@ function App() {
       }
     },
     [
+      appUser?.id,
       projectFiles,
       setActiveFileId,
       setFileError,
@@ -2231,6 +2238,7 @@ function App() {
     (taskIndex) => {
       setCurrentTaskIndex(taskIndex)
       resetTaskSupportState()
+      setFeedbackError('')
     },
     [resetTaskSupportState, setCurrentTaskIndex],
   )
@@ -2305,12 +2313,13 @@ function App() {
         )
 
         if (result.error) {
-          const nextNotice = 'Suggested questions are unavailable right now.'
-          setFollowUpSuggestions([])
+          const fallback = Array.isArray(result.data) && result.data.length > 0 ? result.data : []
+          const nextNotice = fallback.length > 0 ? '' : 'Suggested questions are unavailable right now.'
+          setFollowUpSuggestions(fallback)
           setFollowUpSuggestionsNotice(nextNotice)
-          lastCheckSuggestionsRef.current = []
+          lastCheckSuggestionsRef.current = fallback
           lastCheckSuggestionsNoticeRef.current = nextNotice
-          return { data: null, error: result.error }
+          return { data: fallback, error: result.error }
         }
 
         setFollowUpSuggestions(result.data)
@@ -2346,17 +2355,18 @@ function App() {
       checkSignature === lastCheckSignatureRef.current &&
       lastCheckResultRef.current
     ) {
-      setUiError('')
-      setFeedbackHistory([{ role: 'ai', message: lastCheckResultRef.current.feedback }])
+      setFeedbackError('')
+      currentSessionHistoryRef.current = [{ role: 'ai', message: lastCheckResultRef.current.feedback }]
+      setFeedbackHistory((prev) => [...prev, { role: 'ai', message: lastCheckResultRef.current.feedback }])
       setFollowUpSuggestions(lastCheckSuggestionsRef.current)
       setFollowUpSuggestionsNotice(lastCheckSuggestionsNoticeRef.current)
       setIsGeneratingFollowUpSuggestions(false)
       return { data: lastCheckResultRef.current, error: null }
     }
 
-    setUiError('')
+    setFeedbackError('')
     setIsCheckingCode(true)
-    setFeedbackHistory([])
+    currentSessionHistoryRef.current = []
     setFollowUpSuggestions([])
     setFollowUpSuggestionsNotice('')
     setIsGeneratingFollowUpSuggestions(false)
@@ -2371,19 +2381,20 @@ function App() {
         skillLevel,
       )
       if (result.error) {
-        setUiError(result.error.message)
+        setFeedbackError(result.error.message)
         return { data: null, error: result.error }
       }
 
       lastCheckSignatureRef.current = checkSignature
       lastCheckResultRef.current = result.data
-      setFeedbackHistory([{ role: 'ai', message: result.data.feedback }])
+      currentSessionHistoryRef.current = [{ role: 'ai', message: result.data.feedback }]
+      setFeedbackHistory((prev) => [...prev, { role: 'ai', message: result.data.feedback }])
       await loadFollowUpSuggestions(currentTask, checkSignature, result.data.feedback)
       return { data: result.data, error: null }
     } catch (error) {
       console.error(error)
       const normalizedError = new Error(error.message || 'Code check failed.')
-      setUiError(normalizedError.message)
+      setFeedbackError(normalizedError.message)
       return { data: null, error: normalizedError }
     } finally {
       setIsCheckingCode(false)
@@ -2414,10 +2425,13 @@ function App() {
         return
       }
 
-      setUiError('')
+      setFeedbackError('')
       setIsAskingFollowUp(true)
-      const updatedHistory = [
-        ...feedbackHistory,
+
+      setFeedbackHistory((prev) => [...prev, { role: 'user', message: normalizedQuestion }])
+
+      const sessionContext = [
+        ...currentSessionHistoryRef.current,
         { role: 'user', message: normalizedQuestion },
       ]
 
@@ -2426,20 +2440,21 @@ function App() {
           currentTask,
           userCode,
           normalizedQuestion,
-          updatedHistory,
+          sessionContext,
           skillLevel,
           profileToPromptContext(profile),
         )
 
         if (result.error) {
-          setUiError(result.error.message)
+          setFeedbackError(result.error.message)
           return
         }
 
-        setFeedbackHistory([...updatedHistory, { role: 'ai', message: result.data }])
+        currentSessionHistoryRef.current = [...sessionContext, { role: 'ai', message: result.data }]
+        setFeedbackHistory((prev) => [...prev, { role: 'ai', message: result.data }])
       } catch (error) {
         console.error(error)
-        setUiError(error.message || 'Follow-up request failed.')
+        setFeedbackError(error.message || 'Follow-up request failed.')
       } finally {
         setIsAskingFollowUp(false)
       }
@@ -2447,7 +2462,6 @@ function App() {
     [
       askFollowUp,
       currentTask,
-      feedbackHistory,
       profile,
       skillLevel,
       setFeedbackHistory,
@@ -2461,6 +2475,7 @@ function App() {
     lastCheckResultRef.current = null
     lastCheckSuggestionsRef.current = []
     lastCheckSuggestionsNoticeRef.current = ''
+    currentSessionHistoryRef.current = []
   }, [currentTask?.id, userCode])
 
   const handleMarkCurrentTaskComplete = useCallback(async () => {
@@ -2469,6 +2484,7 @@ function App() {
     }
 
     setUiError('')
+    setFeedbackError('')
     setIsMarkingTaskComplete(true)
     const syncTasksFromDb = async () => {
       if (!currentProjectId) {
@@ -2485,7 +2501,7 @@ function App() {
 
     try {
       if (currentTask.completed) {
-        const { error: taskError } = await markTaskIncompleteInDb(currentTask.id)
+        const { error: taskError } = await markTaskIncompleteInDb(currentTask.id, appUser?.id)
         if (taskError) {
           console.error(taskError)
           setUiError(taskError.message || 'Could not undo task completion in database.')
@@ -2493,9 +2509,9 @@ function App() {
         }
 
         if (currentProjectId) {
-          const { error: projectError } = await markProjectIncomplete(currentProjectId)
+          const { error: projectError } = await markProjectIncomplete(currentProjectId, appUser?.id)
           if (projectError) {
-            const { error: rollbackError } = await markTaskCompleteInDb(currentTask.id)
+            const { error: rollbackError } = await markTaskCompleteInDb(currentTask.id, appUser?.id)
             console.error(projectError)
             if (rollbackError) {
               console.error(rollbackError)
@@ -2522,7 +2538,8 @@ function App() {
         lastCheckResultRef.current
       ) {
         validationResult = lastCheckResultRef.current
-        setFeedbackHistory([{ role: 'ai', message: validationResult.feedback }])
+        currentSessionHistoryRef.current = [{ role: 'ai', message: validationResult.feedback }]
+        setFeedbackHistory((prev) => [...prev, { role: 'ai', message: validationResult.feedback }])
       } else {
         setIsCheckingBeforeComplete(true)
         const checkResult = await runCodeCheck({ useCached: true })
@@ -2553,7 +2570,7 @@ function App() {
         return
       }
 
-      const { error: taskError } = await markTaskCompleteInDb(currentTask.id)
+      const { error: taskError } = await markTaskCompleteInDb(currentTask.id, appUser?.id)
       if (taskError) {
         console.error(taskError)
         setUiError(taskError.message || 'Could not update task status in database.')
@@ -2569,9 +2586,9 @@ function App() {
 
       if (nextTaskIndex === -1) {
         if (currentProjectId) {
-          const { error: projectError } = await markProjectComplete(currentProjectId)
+          const { error: projectError } = await markProjectComplete(currentProjectId, appUser?.id)
           if (projectError) {
-            const { error: rollbackError } = await markTaskIncompleteInDb(currentTask.id)
+            const { error: rollbackError } = await markTaskIncompleteInDb(currentTask.id, appUser?.id)
             console.error(projectError)
             if (rollbackError) {
               console.error(rollbackError)
@@ -2597,6 +2614,7 @@ function App() {
 
       setCurrentTaskIndex(nextTaskIndex)
       resetTaskSupportState()
+      setFeedbackError('')
     } catch (error) {
       console.error(error)
       setUiError(error.message || 'Could not complete task.')
@@ -2605,6 +2623,7 @@ function App() {
       setIsMarkingTaskComplete(false)
     }
   }, [
+    appUser?.id,
     currentProjectId,
     currentTask,
     isMarkingTaskComplete,
@@ -2675,7 +2694,7 @@ function App() {
     setIsMarkingTaskComplete(true)
 
     try {
-      const { error: taskError } = await markTaskIncompleteInDb(reopenTask.id)
+      const { error: taskError } = await markTaskIncompleteInDb(reopenTask.id, appUser?.id)
       if (taskError) {
         console.error(taskError)
         setUiError(taskError.message || 'Could not reopen task in database.')
@@ -2683,10 +2702,10 @@ function App() {
       }
 
       if (currentProjectId) {
-        const { error: projectError } = await markProjectIncomplete(currentProjectId)
+        const { error: projectError } = await markProjectIncomplete(currentProjectId, appUser?.id)
         if (projectError) {
           console.error(projectError)
-          const { error: rollbackError } = await markTaskCompleteInDb(reopenTask.id)
+          const { error: rollbackError } = await markTaskCompleteInDb(reopenTask.id, appUser?.id)
           if (rollbackError) {
             console.error(rollbackError)
             setUiError(
@@ -2702,6 +2721,7 @@ function App() {
       markTaskIncomplete(reopenTask.id)
       setCurrentTaskIndex(reopenTaskIndex)
       resetTaskSupportState()
+      setFeedbackError('')
       setScreen('workspace')
     } catch (error) {
       console.error(error)
@@ -2710,6 +2730,7 @@ function App() {
       setIsMarkingTaskComplete(false)
     }
   }, [
+    appUser?.id,
     currentProjectId,
     isMarkingTaskComplete,
     markTaskIncomplete,
@@ -3054,7 +3075,7 @@ function App() {
         followUpSuggestionsNotice={followUpSuggestionsNotice}
         onCheckCode={handleCheckCode}
         onAskFollowUp={handleFollowUp}
-        errorMessage={uiError}
+        errorMessage={feedbackError}
       />
     </div>
   )

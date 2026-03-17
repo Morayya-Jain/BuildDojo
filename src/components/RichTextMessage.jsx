@@ -1,5 +1,5 @@
 import hljs from 'highlight.js/lib/core'
-import 'highlight.js/styles/github.css'
+import 'highlight.js/styles/github-dark.css'
 import bash from 'highlight.js/lib/languages/bash'
 import csharp from 'highlight.js/lib/languages/csharp'
 import go from 'highlight.js/lib/languages/go'

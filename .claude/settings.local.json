@@ -33,7 +33,8 @@
       "mcp__supabase__list_migrations",
       "mcp__supabase__get_advisors",
       "Bash(grep -E \"\\\\.sql$\")",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(grep:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -761,16 +761,15 @@ function RunConsole({
           ))}
         </select>
 
-        {isConsoleRunnable || canTriggerPreview ? (
-          <button
-            type="button"
-            className={`${buttonPrimary} ${sizeSm} ${compactActionButtonClass}`}
-            onClick={handleRunCode}
-            disabled={isRunning}
-          >
-            {runButtonText}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className={`${buttonPrimary} ${sizeSm} ${compactActionButtonClass}`}
+          onClick={handleRunCode}
+          disabled={isRunning || (!isConsoleRunnable && !canTriggerPreview)}
+          title={!isConsoleRunnable && !canTriggerPreview ? `Run is not supported for ${prettyLanguageName(resolvedLanguage)} in the browser` : undefined}
+        >
+          {runButtonText}
+        </button>
 
         <button
           type="button"
@@ -781,15 +780,13 @@ function RunConsole({
           Clear Output
         </button>
 
-        {isConsoleRunnable ? (
-          <button
-            type="button"
-            className={`${buttonSecondary} ${sizeSm} ${compactActionButtonClass}`}
-            onClick={() => openOutputPanel({ scroll: true })}
-          >
-            Open Output
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className={`${buttonSecondary} ${sizeSm} ${compactActionButtonClass}`}
+          onClick={() => openOutputPanel({ scroll: true })}
+        >
+          Open Output
+        </button>
       </div>
 
       {showLockedLanguageMismatchNotice ? (
@@ -810,34 +807,37 @@ function RunConsole({
         </div>
       ) : null}
 
-      {isConsoleRunnable ? (
-        <div
-          id="run-output-console"
-          ref={outputPanelRef}
-          className={outputPanelClass}
-        >
-          {outputLines.length === 0 ? (
-            <p className="text-slate-300">Run your code to see output.</p>
-          ) : (
-            outputLines.map((line, index) => (
-              <p
-                key={`${line.type}-${index}`}
-                className={
-                  line.type === 'runtime_error' || line.type === 'stderr'
-                    ? 'text-red-300'
-                    : line.type === 'warn'
-                      ? 'text-amber-300'
-                      : line.type === 'result'
-                        ? 'text-emerald-300'
-                        : 'text-slate-100'
-                }
-              >
-                <strong>{line.type}:</strong> {line.message}
-              </p>
-            ))
-          )}
-        </div>
-      ) : null}
+      <div
+        id="run-output-console"
+        ref={outputPanelRef}
+        className={outputPanelClass}
+      >
+        {!isConsoleRunnable && !canTriggerPreview ? (
+          <p className="text-slate-400">
+            Browser execution is not available for {prettyLanguageName(resolvedLanguage)}.
+            Use the mentor to check your code instead.
+          </p>
+        ) : outputLines.length === 0 ? (
+          <p className="text-slate-300">Run your code to see output.</p>
+        ) : (
+          outputLines.map((line, index) => (
+            <p
+              key={`${line.type}-${index}`}
+              className={
+                line.type === 'runtime_error' || line.type === 'stderr'
+                  ? 'text-red-300'
+                  : line.type === 'warn'
+                    ? 'text-amber-300'
+                    : line.type === 'result'
+                      ? 'text-emerald-300'
+                      : 'text-slate-100'
+              }
+            >
+              <strong>{line.type}:</strong> {line.message}
+            </p>
+          ))
+        )}
+      </div>
     </section>
   )
 }

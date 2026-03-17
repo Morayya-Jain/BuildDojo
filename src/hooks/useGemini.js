@@ -1691,55 +1691,41 @@ export function useGemini() {
   }, [])
 
   const generateProjectTitle = useCallback(async (projectDescription, skillLevel = '') => {
-    const prompt = buildProjectTitlePrompt(projectDescription)
-    const model = selectGeminiModel(skillLevel)
+    try {
+      const prompt = buildProjectTitlePrompt(projectDescription)
+      const model = selectGeminiModel(skillLevel)
 
-    const result = await callGemini(prompt, {
-      temperature: 0.3,
-      maxOutputTokens: 48,
-      model,
-    })
+      const result = await callGemini(prompt, {
+        temperature: 0.3,
+        maxOutputTokens: 48,
+        model,
+      })
 
-    if (result.error) {
-      return { data: null, error: result.error }
-    }
+      if (result.error) {
+        return { data: null, error: result.error }
+      }
 
-    return {
-      data: sanitizeProjectTitle(result.data, projectDescription),
-      error: null,
+      return {
+        data: sanitizeProjectTitle(result.data, projectDescription),
+        error: null,
+      }
+    } catch (error) {
+      return {
+        data: null,
+        error: new Error(
+          `Project title generation failed: ${error?.message || 'unexpected error'}`,
+        ),
+      }
     }
   }, [])
 
   const checkUserCode = useCallback(
     async (task, userCode, profileContext = null, skillLevel = '') => {
-      const model = selectGeminiModel(skillLevel)
-      const prompt = buildCodeCheckPrompt(task, userCode, profileContext)
-
-      const firstAttempt = await callGemini(prompt, {
-        temperature: 0.2,
-        maxOutputTokens: 1600,
-        model,
-        responseMimeType: 'application/json',
-        responseSchema: CODE_CHECK_RESPONSE_SCHEMA,
-        retryCount: 1,
-      })
-      if (firstAttempt.error) {
-        return { data: null, error: firstAttempt.error }
-      }
-
       try {
-        const parsed = parseCodeCheckResult(firstAttempt.data)
-        return { data: parsed, error: null }
-      } catch {
-        try {
-          const parsed = parseCodeCheckResultLenient(firstAttempt.data)
-          return { data: parsed, error: null }
-        } catch {
-          // Continue to strict retry before failing.
-        }
+        const model = selectGeminiModel(skillLevel)
+        const prompt = buildCodeCheckPrompt(task, userCode, profileContext)
 
-        const retryPrompt = `${prompt}\nYou must return only raw JSON matching the schema exactly.`
-        const secondAttempt = await callGemini(retryPrompt, {
+        const firstAttempt = await callGemini(prompt, {
           temperature: 0.2,
           maxOutputTokens: 1600,
           model,
@@ -1747,26 +1733,58 @@ export function useGemini() {
           responseSchema: CODE_CHECK_RESPONSE_SCHEMA,
           retryCount: 1,
         })
-
-        if (secondAttempt.error) {
-          return { data: null, error: secondAttempt.error }
+        if (firstAttempt.error) {
+          return { data: null, error: firstAttempt.error }
         }
 
         try {
-          const parsed = parseCodeCheckResult(secondAttempt.data)
+          const parsed = parseCodeCheckResult(firstAttempt.data)
           return { data: parsed, error: null }
-        } catch (error) {
+        } catch {
           try {
-            const parsed = parseCodeCheckResultLenient(secondAttempt.data)
+            const parsed = parseCodeCheckResultLenient(firstAttempt.data)
             return { data: parsed, error: null }
           } catch {
-            return {
-              data: null,
-              error: new Error(
-                `Could not parse code check JSON after retry: ${error.message}`,
-              ),
+            // Continue to strict retry before failing.
+          }
+
+          const retryPrompt = `${prompt}\nYou must return only raw JSON matching the schema exactly.`
+          const secondAttempt = await callGemini(retryPrompt, {
+            temperature: 0.2,
+            maxOutputTokens: 1600,
+            model,
+            responseMimeType: 'application/json',
+            responseSchema: CODE_CHECK_RESPONSE_SCHEMA,
+            retryCount: 1,
+          })
+
+          if (secondAttempt.error) {
+            return { data: null, error: secondAttempt.error }
+          }
+
+          try {
+            const parsed = parseCodeCheckResult(secondAttempt.data)
+            return { data: parsed, error: null }
+          } catch (error) {
+            try {
+              const parsed = parseCodeCheckResultLenient(secondAttempt.data)
+              return { data: parsed, error: null }
+            } catch {
+              return {
+                data: null,
+                error: new Error(
+                  `Could not parse code check JSON after retry: ${error.message}`,
+                ),
+              }
             }
           }
+        }
+      } catch (error) {
+        return {
+          data: null,
+          error: new Error(
+            `Code check failed: ${error?.message || 'unexpected error'}`,
+          ),
         }
       }
     },
@@ -1782,65 +1800,74 @@ export function useGemini() {
       skillLevel,
       profileContext = null,
     ) => {
-      const prompt = buildFollowUpPrompt({
-        task,
-        userCode,
-        userQuestion,
-        feedbackHistory,
-        skillLevel,
-        profileContext,
-      })
-      const model = selectGeminiModel(skillLevel)
-      const casualCheckIn = isLikelyCasualCheckIn(userQuestion)
+      try {
+        const prompt = buildFollowUpPrompt({
+          task,
+          userCode,
+          userQuestion,
+          feedbackHistory,
+          skillLevel,
+          profileContext,
+        })
+        const model = selectGeminiModel(skillLevel)
+        const casualCheckIn = isLikelyCasualCheckIn(userQuestion)
 
-      const result = await callGemini(prompt, {
-        temperature: 0.4,
-        maxOutputTokens: 800,
-        model,
-        retryCount: 1,
-      })
-      if (result.error) {
-        return { data: null, error: result.error }
-      }
-
-      const firstResponse = toText(result.data).trim()
-      if (!firstResponse) {
-        return {
-          data: null,
-          error: new Error(
-            'The mentor could not generate a response. Please try again or rephrase your question.',
-          ),
+        const result = await callGemini(prompt, {
+          temperature: 0.4,
+          maxOutputTokens: 1600,
+          model,
+          retryCount: 1,
+        })
+        if (result.error) {
+          return { data: null, error: result.error }
         }
-      }
 
-      if (casualCheckIn || !isLowQualityMentorResponse(firstResponse, userQuestion)) {
-        return { data: firstResponse, error: null }
-      }
+        const firstResponse = toText(result.data).trim()
+        if (!firstResponse) {
+          return {
+            data: null,
+            error: new Error(
+              'The mentor could not generate a response. Please try again or rephrase your question.',
+            ),
+          }
+        }
 
-      const strictRetryPrompt = `${prompt}
+        if (casualCheckIn || !isLowQualityMentorResponse(firstResponse, userQuestion)) {
+          return { data: firstResponse, error: null }
+        }
+
+        const strictRetryPrompt = `${prompt}
 Additional mandatory quality checks:
 - Provide one concrete next action the learner can do immediately.
 - Tie that action to the current task title/description or current code context.
 - Never answer with tautologies like "do that" or "keep doing this".
 - Keep guidance specific, practical, and testable.`
 
-      const retryResult = await callGemini(strictRetryPrompt, {
-        temperature: 0.2,
-        maxOutputTokens: 800,
-        model,
-      })
+        const retryResult = await callGemini(strictRetryPrompt, {
+          temperature: 0.2,
+          maxOutputTokens: 800,
+          model,
+        })
 
-      if (!retryResult.error) {
-        const retryResponse = toText(retryResult.data).trim()
-        if (retryResponse && !isLowQualityMentorResponse(retryResponse, userQuestion)) {
-          return { data: retryResponse, error: null }
+        if (!retryResult.error) {
+          const retryResponse = toText(retryResult.data).trim()
+          if (retryResponse && !isLowQualityMentorResponse(retryResponse, userQuestion)) {
+            return { data: retryResponse, error: null }
+          }
+          if (retryResponse) {
+            return { data: retryResponse, error: null }
+          }
         }
-        if (retryResponse) {
-          return { data: retryResponse, error: null }
+
+        return { data: firstResponse, error: null }
+      } catch (error) {
+        return {
+          data: null,
+          error: new Error(
+            `Follow-up request failed: ${error?.message || 'unexpected error'}`,
+          ),
         }
       }
-
-      return { data: firstResponse, error: null }
     },
     [],
   )
@@ -1864,14 +1891,14 @@ Additional mandatory quality checks:
 
       const firstAttempt = await callGemini(prompt, {
         temperature: 0.2,
-        maxOutputTokens: 140,
+        maxOutputTokens: 400,
         model,
         responseMimeType: 'application/json',
         responseSchema: FOLLOW_UP_SUGGESTIONS_RESPONSE_SCHEMA,
         retryCount: 2,
       })
       if (firstAttempt.error) {
-        return { data: fallbackSuggestions, error: null }
+        return { data: fallbackSuggestions, error: firstAttempt.error }
       }
 
       try {
@@ -1896,7 +1923,7 @@ Additional mandatory quality checks:
         })
 
         if (secondAttempt.error) {
-          return { data: fallbackSuggestions, error: null }
+          return { data: fallbackSuggestions, error: secondAttempt.error }
         }
 
         try {
@@ -1911,7 +1938,10 @@ Additional mandatory quality checks:
               'Could not parse follow-up suggestions after retry, using fallback suggestions.',
               error,
             )
-            return { data: fallbackSuggestions, error: null }
+            return {
+              data: fallbackSuggestions,
+              error: new Error('Could not parse follow-up suggestions after retry.'),
+            }
           }
         }
       }

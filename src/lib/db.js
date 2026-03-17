@@ -366,18 +366,20 @@ export async function getProjectTasks(projectId) {
   }
 }
 
-export async function markTaskComplete(taskId) {
+export async function markTaskComplete(taskId, userId) {
   if (!supabase) {
     return getSupabaseUnavailableResponse()
   }
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('tasks')
       .update({ completed: true })
       .eq('id', taskId)
-      .select()
-      .single()
+    if (userId) {
+      query = query.eq('user_id', userId)
+    }
+    const { data, error } = await query.select().single()
 
     return { data, error }
   } catch (error) {
@@ -385,18 +387,20 @@ export async function markTaskComplete(taskId) {
   }
 }
 
-export async function markTaskIncomplete(taskId) {
+export async function markTaskIncomplete(taskId, userId) {
   if (!supabase) {
     return getSupabaseUnavailableResponse()
   }
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('tasks')
       .update({ completed: false })
       .eq('id', taskId)
-      .select()
-      .single()
+    if (userId) {
+      query = query.eq('user_id', userId)
+    }
+    const { data, error } = await query.select().single()
 
     return { data, error }
   } catch (error) {
@@ -404,18 +408,20 @@ export async function markTaskIncomplete(taskId) {
   }
 }
 
-export async function markProjectComplete(projectId) {
+export async function markProjectComplete(projectId, userId) {
   if (!supabase) {
     return getSupabaseUnavailableResponse()
   }
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('projects')
       .update({ completed: true })
       .eq('id', projectId)
-      .select()
-      .single()
+    if (userId) {
+      query = query.eq('user_id', userId)
+    }
+    const { data, error } = await query.select().single()
 
     return { data, error }
   } catch (error) {
@@ -496,6 +502,7 @@ export async function upsertProjectFile(file) {
         .from('project_files')
         .update(payload)
         .eq('id', file.id)
+        .eq('user_id', file.user_id)
         .select('*')
 
       if (updateError) {
@@ -519,18 +526,20 @@ export async function upsertProjectFile(file) {
   }
 }
 
-export async function deleteProjectFile(fileId) {
+export async function deleteProjectFile(fileId, userId) {
   if (!supabase) {
     return getSupabaseUnavailableResponse()
   }
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('project_files')
       .delete()
       .eq('id', fileId)
-      .select('*')
-      .single()
+    if (userId) {
+      query = query.eq('user_id', userId)
+    }
+    const { data, error } = await query.select('*').single()
 
     return { data, error }
   } catch (error) {
@@ -632,6 +641,7 @@ export async function replaceProjectFiles(projectId, userId, files) {
         .from('project_files')
         .delete()
         .in('id', staleIds)
+        .eq('user_id', userId)
 
       if (deleteError) {
         return { data: null, error: deleteError }
@@ -649,18 +659,20 @@ export async function replaceProjectFiles(projectId, userId, files) {
   }
 }
 
-export async function markProjectIncomplete(projectId) {
+export async function markProjectIncomplete(projectId, userId) {
   if (!supabase) {
     return getSupabaseUnavailableResponse()
   }
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('projects')
       .update({ completed: false })
       .eq('id', projectId)
-      .select()
-      .single()
+    if (userId) {
+      query = query.eq('user_id', userId)
+    }
+    const { data, error } = await query.select().single()
 
     return { data, error }
   } catch (error) {
@@ -676,7 +688,7 @@ export async function updateProjectTitle(projectId, userId, title) {
   try {
     const normalizedTitle = `${title || ''}`.trim()
     if (!normalizedTitle) {
-      return { data: null, error: null }
+      return { data: null, error: new Error('Title cannot be empty.') }
     }
 
     const { data, error } = await supabase

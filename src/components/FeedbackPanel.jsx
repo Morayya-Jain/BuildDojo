@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { buttonPrimary, buttonSecondary, sizeLg } from '../lib/buttonStyles'
 import RichTextMessage from './RichTextMessage'
 
@@ -14,10 +14,26 @@ function FeedbackPanel({
   errorMessage,
 }) {
   const [question, setQuestion] = useState('')
-  const isQuestionEmpty = question.trim().length === 0
-  const feedbackWindowHeightClass = isQuestionEmpty
-    ? 'min-h-[170px] max-h-[260px]'
-    : 'min-h-[320px] max-h-[420px]'
+  const feedbackEndRef = useRef(null)
+  const panelRef = useRef(null)
+
+  // Auto-scroll feedback window to latest message
+  useEffect(() => {
+    if (feedbackHistory.length > 0 || isCheckingCode || isAskingFollowUp) {
+      setTimeout(() => {
+        feedbackEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+      }, 0)
+    }
+  }, [feedbackHistory.length, isCheckingCode, isAskingFollowUp])
+
+  // Auto-scroll right pane to show FeedbackPanel
+  useEffect(() => {
+    if (feedbackHistory.length > 0 || isCheckingCode || isAskingFollowUp) {
+      setTimeout(() => {
+        panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 50)
+    }
+  }, [feedbackHistory.length, isCheckingCode, isAskingFollowUp])
 
   const handleFollowUp = async (event) => {
     event.preventDefault()
@@ -35,7 +51,7 @@ function FeedbackPanel({
   }
 
   return (
-    <section className="flex flex-col gap-3 border border-slate-300 bg-white p-4">
+    <section ref={panelRef} className="flex flex-col gap-3 border border-slate-300 bg-white p-4">
       <h2 className="text-2xl font-semibold text-slate-900">Mentor Feedback</h2>
 
       <button
@@ -48,9 +64,9 @@ function FeedbackPanel({
       </button>
 
       <div
-        className={`${feedbackWindowHeightClass} overflow-auto rounded-xl border border-slate-300 bg-slate-50 p-3 transition-[min-height,max-height] duration-200`}
+        className="min-h-[200px] max-h-[380px] overflow-auto rounded-xl border border-slate-300 bg-slate-50 p-3"
       >
-        {feedbackHistory.length === 0 ? (
+        {feedbackHistory.length === 0 && !isCheckingCode && !isAskingFollowUp ? (
           <p className="text-sm leading-6 text-slate-500">No feedback yet.</p>
         ) : (
           <div className="flex flex-col gap-3">
@@ -71,6 +87,15 @@ function FeedbackPanel({
                 )}
               </div>
             ))}
+            {(isCheckingCode || isAskingFollowUp) && (
+              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                <span className="text-xs font-medium text-slate-500">
+                  {isCheckingCode ? 'Checking your code...' : 'Thinking...'}
+                </span>
+              </div>
+            )}
+            <div ref={feedbackEndRef} />
           </div>
         )}
       </div>
