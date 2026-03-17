@@ -218,13 +218,13 @@ function Onboarding({
       setLanguageSuggestionError('')
       try {
         const result = await onSuggestLanguages(trimmedDescription)
-        if (result?.error) {
-          setLanguageSuggestionError('Could not suggest languages. Please select from defaults.')
-        }
         const groups = result?.data || normalizeLanguageGroups([])
         setSuggestedLanguages(groups)
         setSelectedLanguages([])
         setSelectedGroupIndex(null)
+        if (result?.error) {
+          setLanguageSuggestionError('Could not tailor suggestions to your project. Showing common defaults.')
+        }
       } catch {
         setSuggestedLanguages(normalizeLanguageGroups([]))
         setSelectedLanguages([])

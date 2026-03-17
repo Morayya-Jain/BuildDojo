@@ -77,8 +77,11 @@ const LANGUAGE_SUGGESTION_SCHEMA = {
     languageGroups: {
       type: 'ARRAY',
       items: {
-        type: 'ARRAY',
-        items: { type: 'STRING' },
+        type: 'OBJECT',
+        properties: {
+          langs: { type: 'ARRAY', items: { type: 'STRING' } },
+        },
+        required: ['langs'],
       },
     },
   },
@@ -1042,6 +1045,7 @@ async function callGemini(prompt, options = {}) {
     model = GEMINI_MODEL_FLASH,
     responseMimeType = null,
     responseSchema = null,
+    thinkingBudget = null,
     retryCount = 0,
     timeoutMs = TIMEOUT_MS,
   } = options
@@ -1063,6 +1067,18 @@ async function callGemini(prompt, options = {}) {
     ...(responseSchema ? { responseSchema } : {}),
   }
 
+  const requestBody = {
+    contents: [
+      {
+        parts: [{ text: prompt }],
+      },
+    ],
+    generationConfig,
+  }
+  if (thinkingBudget != null) {
+    requestBody.thinkingConfig = { thinkingBudget }
+  }
+
   let lastError = null
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -1075,14 +1091,7 @@ async function callGemini(prompt, options = {}) {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: prompt }],
-              },
-            ],
-            generationConfig,
-          }),
+          body: JSON.stringify(requestBody),
           signal: controller.signal,
         },
       )
@@ -1239,17 +1248,17 @@ CRITICAL: Only suggest languages that are genuinely appropriate for this SPECIFI
 Your task: suggest 2–6 language OPTIONS the user can pick from. Each option is a group of 1–3 languages that naturally work together for this project. The user will pick exactly ONE group.
 
 Domain rules (apply FIRST — these override everything else):
-- Web UI / frontend / website / web page / landing page: ONLY return groups containing html, javascript, and/or typescript. Example: [["html","javascript"],["html","typescript"]]. Do NOT include python, java, go, rust, swift, kotlin, csharp, ruby, php, or sql.
-- Backend API / server / microservice: ONLY return groups from server-appropriate languages. Example: [["python"],["javascript"],["go"],["java"]]. Add sql to a group ONLY if database work is explicitly mentioned. Do NOT include html or swift.
-- Data / analytics / ML / AI: ONLY return [["python"],["python","sql"]]. Optionally add ["javascript"] if a dashboard or visualization is mentioned. Do NOT include java, go, rust, swift, kotlin, csharp.
-- iOS / macOS native app: ONLY return [["swift"]]. Add ["kotlin"] only if cross-platform is explicitly mentioned.
-- Android native app: ONLY return [["kotlin"]], optionally [["java"]].
-- Full-stack / web app with backend: Return groups like [["html","javascript"],["html","typescript"],["python"],["javascript"]]. Mix frontend and backend options as separate groups.
-- General-purpose (calculators, games, CLI tools, algorithms, simulations, utilities): Return 3–6 single-language groups from relevant paradigms. Example: [["python"],["javascript"],["java"],["go"]].
+- Web UI / frontend / website / web page / landing page: ONLY return groups containing html, javascript, and/or typescript. Example: {"langs":["html","javascript"]} and {"langs":["html","typescript"]}. Do NOT include python, java, go, rust, swift, kotlin, csharp, ruby, php, or sql.
+- Backend API / server / microservice: ONLY return groups from server-appropriate languages. Example: {"langs":["python"]}, {"langs":["javascript"]}, {"langs":["go"]}, {"langs":["java"]}. Add sql to a group ONLY if database work is explicitly mentioned. Do NOT include html or swift.
+- Data / analytics / ML / AI: ONLY return {"langs":["python"]} and {"langs":["python","sql"]}. Optionally add {"langs":["javascript"]} if a dashboard or visualization is mentioned. Do NOT include java, go, rust, swift, kotlin, csharp.
+- iOS / macOS native app: ONLY return {"langs":["swift"]}. Add {"langs":["kotlin"]} only if cross-platform is explicitly mentioned.
+- Android native app: ONLY return {"langs":["kotlin"]}, optionally {"langs":["java"]}.
+- Full-stack / web app with backend: Return groups like {"langs":["html","javascript"]}, {"langs":["html","typescript"]}, {"langs":["python"]}, {"langs":["javascript"]}. Mix frontend and backend options as separate groups.
+- General-purpose (calculators, games, CLI tools, algorithms, simulations, utilities): Return 3–6 single-language groups from relevant paradigms. Example: {"langs":["python"]}, {"langs":["javascript"]}, {"langs":["java"]}, {"langs":["go"]}.
 
 Bundling rules:
-- Bundle languages that are typically used TOGETHER in one project into one group (e.g., ["html","javascript"] for web).
-- Languages that serve the SAME role (alternatives) must be SEPARATE groups (e.g., ["python"] and ["java"] as separate groups, NOT together).
+- Bundle languages that are typically used TOGETHER in one project into one group (e.g., {"langs":["html","javascript"]} for web).
+- Languages that serve the SAME role (alternatives) must be SEPARATE groups (e.g., {"langs":["python"]} and {"langs":["java"]} as separate groups, NOT together).
 - Each group = languages the user would use simultaneously, not choices between them.
 - Keep each group to 1–3 languages maximum.
 - Order groups with the most recommended option FIRST.
@@ -1260,7 +1269,7 @@ Constraints:
 - Never include a language that is clearly wrong for the domain.
 - Return ONLY valid raw JSON. No markdown, no backticks, no explanation.
 
-Schema: {"languageGroups": [["lang1", "lang2"], ["lang3"], ...]}`
+Schema: {"languageGroups": [{"langs": ["lang1", "lang2"]}, {"langs": ["lang3"]}, ...]}`
 }
 
 export function buildRoadmapPrompt(projectDescription, clarifyingAnswers, profileContext = null, languages = null) {
@@ -1486,30 +1495,32 @@ export function useGemini() {
       const prompt = buildLanguageSuggestionPrompt(projectDescription)
       const result = await callGemini(prompt, {
         temperature: 0.3,
-        maxOutputTokens: 512,
+        maxOutputTokens: 2048,
         model: GEMINI_MODEL_FLASH,
         responseMimeType: 'application/json',
         responseSchema: LANGUAGE_SUGGESTION_SCHEMA,
-        retryCount: 1,
-        timeoutMs: 10000,
+        retryCount: 2,
+        timeoutMs: 15000,
       })
 
       if (result.error) {
-        return { data: normalizeLanguageGroups([]), error: result.error }
+        console.warn('Language suggestion API error:', result.error)
+        return { data: FALLBACK_LANGUAGE_GROUPS, error: result.error }
       }
 
-      try {
-        const parsed = typeof result.data === 'string' ? JSON.parse(cleanJsonString(result.data)) : result.data
-        const rawGroups = Array.isArray(parsed?.languageGroups) ? parsed.languageGroups : Array.isArray(parsed) ? parsed : []
-        const groups = rawGroups.map((g) => (Array.isArray(g?.langs) ? g.langs : Array.isArray(g) ? g : []))
-        return { data: normalizeLanguageGroups(groups), error: null }
-      } catch (parseError) {
-        console.warn('Language suggestion parse failed:', parseError)
-        return { data: null, error: new Error('Failed to parse language suggestions.') }
-      }
+      const parsed = typeof result.data === 'string' ? JSON.parse(cleanJsonString(result.data)) : result.data
+      const rawGroups = Array.isArray(parsed?.languageGroups)
+        ? parsed.languageGroups
+        : Array.isArray(parsed)
+          ? parsed
+          : []
+      const groups = rawGroups.map((g) =>
+        Array.isArray(g?.langs) ? g.langs : Array.isArray(g) ? g : [],
+      )
+      return { data: normalizeLanguageGroups(groups), error: null }
     } catch (error) {
-      console.warn('Language suggestion request failed:', error)
-      return { data: null, error }
+      console.warn('Language suggestion failed:', error)
+      return { data: FALLBACK_LANGUAGE_GROUPS, error }
     }
   }, [])
 
