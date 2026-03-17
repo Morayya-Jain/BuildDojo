@@ -71,6 +71,10 @@ const FOLLOW_UP_SUGGESTIONS_RESPONSE_SCHEMA = {
   },
   required: ['suggestions'],
 }
+const VALID_LANGUAGE_IDS = [
+  'javascript', 'typescript', 'python', 'html', 'sql',
+  'java', 'csharp', 'go', 'rust', 'ruby', 'php', 'swift', 'kotlin',
+]
 const LANGUAGE_SUGGESTION_SCHEMA = {
   type: 'OBJECT',
   properties: {
@@ -79,7 +83,10 @@ const LANGUAGE_SUGGESTION_SCHEMA = {
       items: {
         type: 'OBJECT',
         properties: {
-          langs: { type: 'ARRAY', items: { type: 'STRING' } },
+          langs: {
+            type: 'ARRAY',
+            items: { type: 'STRING', enum: VALID_LANGUAGE_IDS },
+          },
         },
         required: ['langs'],
       },
