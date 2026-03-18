@@ -1,6 +1,8 @@
+import { memo } from 'react'
+
 function Roadmap({ tasks, currentTaskIndex, onSelectTask }) {
   return (
-    <aside className="overflow-auto">
+    <aside className="overflow-auto" aria-label="Project roadmap">
       <h2 className="mb-4 text-lg font-semibold text-slate-900">Roadmap</h2>
 
       <div className="relative space-y-3">
@@ -18,6 +20,7 @@ function Roadmap({ tasks, currentTaskIndex, onSelectTask }) {
                       ? 'border-emerald-300 text-emerald-500'
                       : 'border-slate-300 text-slate-700'
                 }`}
+                aria-label={`Task ${index + 1}${isCompleted ? ', completed' : isCurrent ? ', current' : ''}`}
               >
                 {index + 1}
               </div>
@@ -46,4 +49,4 @@ function Roadmap({ tasks, currentTaskIndex, onSelectTask }) {
   )
 }
 
-export default Roadmap
+export default memo(Roadmap)

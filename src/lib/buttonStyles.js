@@ -1,5 +1,5 @@
 const buttonBase =
-  'inline-flex cursor-pointer items-center justify-center rounded-md border font-medium transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none'
+  'inline-flex cursor-pointer items-center justify-center rounded-md border font-medium transition-all duration-150 ease-out motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none'
 
 const buttonPrimary =
   `${buttonBase} border-emerald-700 bg-emerald-600 text-white shadow-sm hover:border-emerald-600 hover:bg-emerald-500 active:translate-y-px`

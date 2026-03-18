@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { memo, useState, useEffect, useRef } from 'react'
 import { buttonPrimary, buttonSecondary, sizeLg } from '../lib/buttonStyles'
 import RichTextMessage from './RichTextMessage'
 
@@ -20,18 +20,20 @@ function FeedbackPanel({
   // Auto-scroll feedback window to latest message
   useEffect(() => {
     if (feedbackHistory.length > 0 || isCheckingCode || isAskingFollowUp) {
-      setTimeout(() => {
+      const timerId = setTimeout(() => {
         feedbackEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
       }, 0)
+      return () => clearTimeout(timerId)
     }
   }, [feedbackHistory.length, isCheckingCode, isAskingFollowUp])
 
   // Auto-scroll right pane to show FeedbackPanel
   useEffect(() => {
     if (feedbackHistory.length > 0 || isCheckingCode || isAskingFollowUp) {
-      setTimeout(() => {
+      const timerId = setTimeout(() => {
         panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 50)
+      return () => clearTimeout(timerId)
     }
   }, [feedbackHistory.length, isCheckingCode, isAskingFollowUp])
 
@@ -42,8 +44,10 @@ function FeedbackPanel({
       return
     }
 
-    await onAskFollowUp(question)
-    setQuestion('')
+    const result = await onAskFollowUp(question)
+    if (result?.error == null) {
+      setQuestion('')
+    }
   }
 
   const handleSuggestionClick = (suggestion) => {
@@ -64,7 +68,9 @@ function FeedbackPanel({
       </button>
 
       <div
-        className="min-h-[200px] max-h-[380px] overflow-auto rounded-xl border border-slate-300 bg-slate-50 p-3"
+        className="min-h-[200px] max-h-[min(380px,50svh)] overflow-auto rounded-xl border border-slate-300 bg-slate-50 p-3"
+        role="log"
+        aria-live="polite"
       >
         {feedbackHistory.length === 0 && !isCheckingCode && !isAskingFollowUp ? (
           <p className="text-sm leading-6 text-slate-500">No feedback yet.</p>
@@ -89,7 +95,7 @@ function FeedbackPanel({
             ))}
             {(isCheckingCode || isAskingFollowUp) && (
               <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                <span className="inline-block h-2 w-2 animate-pulse motion-reduce:animate-none rounded-full bg-emerald-500" />
                 <span className="text-xs font-medium text-slate-500">
                   {isCheckingCode ? 'Checking your code...' : 'Thinking...'}
                 </span>
@@ -107,6 +113,7 @@ function FeedbackPanel({
             type="text"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
+            maxLength={500}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2"
             placeholder="What should I fix next?"
           />
@@ -150,9 +157,9 @@ function FeedbackPanel({
         ) : null}
       </form>
 
-      {errorMessage && <p className="text-red-600">{errorMessage}</p>}
+      {errorMessage && <p className="text-red-600" role="alert">{errorMessage}</p>}
     </section>
   )
 }
 
-export default FeedbackPanel
+export default memo(FeedbackPanel)

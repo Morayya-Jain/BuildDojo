@@ -98,6 +98,7 @@ function AuthScreen({
                       onChange={(event) => setFullName(event.target.value)}
                       autoComplete="name"
                       required
+                      maxLength={100}
                       className="h-12 rounded-xl border border-slate-300 px-3 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
                       placeholder="Enter your full name"
                     />
@@ -200,8 +201,8 @@ function AuthScreen({
                 </button>
               </p>
 
-              {authError ? <p className="mt-4 text-sm text-red-600">{authError}</p> : null}
-              {authInfo ? <p className="mt-4 text-sm text-green-700">{authInfo}</p> : null}
+              {authError ? <p className="mt-4 text-sm text-red-600" role="alert">{authError}</p> : null}
+              {authInfo ? <p className="mt-4 text-sm text-green-700" role="status">{authInfo}</p> : null}
             </div>
           </div>
         </section>

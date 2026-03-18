@@ -429,6 +429,7 @@ function Onboarding({
                         onChange={(event) => handleDescriptionChange(event.target.value)}
                         placeholder="Describe what you want to build or ask your next coding question..."
                         rows={1}
+                        maxLength={2000}
                         className="w-full min-w-0 resize-none border-none bg-transparent py-2 text-lg leading-7 text-slate-900 outline-none placeholder:text-slate-500"
                         disabled={isGeneratingRoadmap}
                         required
@@ -444,6 +445,7 @@ function Onboarding({
                             key={chip.id}
                             type="button"
                             onClick={() => setSelectedSkillChip(chip.id)}
+                            aria-pressed={isActive}
                             className={`inline-flex h-10 items-center rounded-full border px-4 text-base font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-100 ${
                               isActive
                                 ? 'border-green-700 bg-green-600 text-white'
@@ -516,6 +518,7 @@ function Onboarding({
                         value={experience}
                         onChange={(event) => setExperience(event.target.value)}
                         rows={3}
+                        maxLength={500}
                         className="rounded-xl border border-slate-300 px-3 py-2 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
                         placeholder="Example: I know basic HTML/CSS and a bit of JavaScript"
                         disabled={isGeneratingRoadmap}
@@ -528,6 +531,7 @@ function Onboarding({
                         value={scope}
                         onChange={(event) => setScope(event.target.value)}
                         rows={3}
+                        maxLength={500}
                         className="rounded-xl border border-slate-300 px-3 py-2 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
                         placeholder="Example: Sign up, log in, and create one todo list"
                         disabled={isGeneratingRoadmap}
@@ -540,6 +544,7 @@ function Onboarding({
                         type="text"
                         value={timeCommitment}
                         onChange={(event) => setTimeCommitment(event.target.value)}
+                        maxLength={200}
                         className="h-12 rounded-xl border border-slate-300 px-3 text-base outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
                         placeholder="Example: 4 hours per week"
                         disabled={isGeneratingRoadmap}
@@ -594,7 +599,7 @@ function Onboarding({
               </div>
             </form>
 
-            {errorMessage ? <p className="mt-4 text-sm text-red-600">{errorMessage}</p> : null}
+            {errorMessage ? <p className="mt-4 text-sm text-red-600" role="alert">{errorMessage}</p> : null}
             {isGeneratingRoadmap ? (
               <p className="mt-2 text-sm text-slate-600">
                 <span className="inline-flex items-center gap-2">

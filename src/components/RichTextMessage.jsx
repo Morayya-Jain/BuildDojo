@@ -16,6 +16,7 @@ import swift from 'highlight.js/lib/languages/swift'
 import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
+import { memo, useMemo } from 'react'
 import {
   MENTOR_SNIPPET_MAX_LINES,
   MENTOR_SNIPPET_TRUNCATION_NOTE,
@@ -89,9 +90,9 @@ function highlightCode(content, language) {
 }
 
 function RichTextMessage({ text, className = '' }) {
-  const segments = limitMentorSnippetSegments(
-    parseRichTextSegments(text),
-    MENTOR_SNIPPET_MAX_LINES,
+  const segments = useMemo(
+    () => limitMentorSnippetSegments(parseRichTextSegments(text), MENTOR_SNIPPET_MAX_LINES),
+    [text],
   )
 
   return (
@@ -141,4 +142,4 @@ function RichTextMessage({ text, className = '' }) {
   )
 }
 
-export default RichTextMessage
+export default memo(RichTextMessage)

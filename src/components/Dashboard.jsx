@@ -107,10 +107,10 @@ function Dashboard({
                 className="rounded-2xl border-2 border-slate-300 bg-slate-100 p-4 transition-colors hover:border-green-200 md:p-6"
               >
                 <div className="space-y-3">
-                  <h3 className="break-words text-lg font-semibold text-slate-900 md:text-xl">
+                  <h3 className="line-clamp-2 break-words text-lg font-semibold text-slate-900 md:text-xl">
                     {getProjectDisplayTitle(project)}
                   </h3>
-                  <p className="break-words text-sm text-slate-900 md:text-base">
+                  <p className="line-clamp-3 break-words text-sm text-slate-900 md:text-base">
                     <strong className="font-semibold">Description:</strong> {project.description}
                   </p>
                   <p className="text-sm text-slate-900 md:text-base">

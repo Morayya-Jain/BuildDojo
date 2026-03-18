@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { buttonDanger, buttonPrimary, sizeSm } from '../lib/buttonStyles'
 
 function FileTree({
@@ -91,7 +91,7 @@ function FileTree({
 
                   <button
                     type="button"
-                    className="ml-2 inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-slate-600 hover:border-slate-300 hover:bg-white hover:text-slate-900"
+                    className="ml-2 inline-flex h-10 w-10 items-center justify-center rounded-md border border-transparent text-slate-600 hover:border-slate-300 hover:bg-white hover:text-slate-900"
                     onClick={() =>
                       setOpenMenuFileId((prev) => (prev === file.id ? null : file.id))
                     }
@@ -145,4 +145,4 @@ function FileTree({
   )
 }
 
-export default FileTree
+export default memo(FileTree)

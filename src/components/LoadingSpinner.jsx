@@ -2,7 +2,7 @@ function LoadingSpinner({ className = 'h-4 w-4', ariaHidden = true }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      className={`animate-spin ${className}`}
+      className={`animate-spin motion-reduce:animate-none ${className}`}
       style={{ animationDuration: '800ms' }}
       fill="none"
       aria-hidden={ariaHidden}

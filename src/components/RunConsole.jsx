@@ -811,6 +811,8 @@ function RunConsole({
         id="run-output-console"
         ref={outputPanelRef}
         className={outputPanelClass}
+        role="log"
+        aria-live="polite"
       >
         {!isConsoleRunnable && !canTriggerPreview ? (
           <p className="text-slate-400">

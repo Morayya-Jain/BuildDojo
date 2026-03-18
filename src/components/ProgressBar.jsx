@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 function ProgressBar({ completedCount, totalCount }) {
   const percent = totalCount ? Math.round((completedCount / totalCount) * 100) : 0
 
@@ -13,4 +15,4 @@ function ProgressBar({ completedCount, totalCount }) {
   )
 }
 
-export default ProgressBar
+export default memo(ProgressBar)

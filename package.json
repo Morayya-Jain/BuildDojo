@@ -17,8 +17,7 @@
     "jszip": "^3.10.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "sql.js": "^1.14.1",
-    "typescript": "^5.9.3"
+    "sql.js": "^1.14.1"
   },
   "overrides": {
     "dompurify": "3.3.3"
@@ -36,6 +35,7 @@
     "globals": "^17.4.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
+    "typescript": "^5.9.3",
     "vite": "^8.0.0"
   }
 }

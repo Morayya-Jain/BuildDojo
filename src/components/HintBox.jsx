@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { buttonPrimary, buttonSecondary, sizeSm } from '../lib/buttonStyles'
 import RichTextMessage from './RichTextMessage'
 
@@ -38,6 +39,7 @@ function HintBox({
           onClick={onShowExample}
           disabled={isDisabled || hintsUsed < 1}
           title={hintsUsed < 1 ? 'Reveal at least one hint first.' : undefined}
+          aria-expanded={exampleViewed}
         >
           {exampleViewed ? 'Hide example' : 'Show example'}
         </button>
@@ -63,4 +65,4 @@ function HintBox({
   )
 }
 
-export default HintBox
+export default memo(HintBox)

@@ -451,6 +451,7 @@ function App() {
   const isSignupTransitionPendingRef = useRef(false)
   const signupConfigureLoaderStartedAtRef = useRef(0)
   const lastInitializedUserIdRef = useRef(null)
+  const currentTaskIdRef = useRef(null)
   const {
     workspaceRef,
     centerPaneRef,
@@ -522,9 +523,11 @@ function App() {
 
     roadmapWatchdogTimeoutRef.current = window.setTimeout(() => {
       setIsGeneratingRoadmap(false)
-      setUiError('Roadmap generation got stuck and was stopped. Please try again.')
+      if (screen === 'new-project') {
+        setUiError('Roadmap generation got stuck and was stopped. Please try again.')
+      }
     }, 95000)
-  }, [isGeneratingRoadmap, setIsGeneratingRoadmap])
+  }, [isGeneratingRoadmap, screen, setIsGeneratingRoadmap])
 
   useEffect(() => {
     if (feedbackHistory.length === 0) {
@@ -1045,11 +1048,17 @@ function App() {
     hasAttemptedHashRestoreRef.current = true
     resetApp()
     setUiError('')
+    setFeedbackError('')
     setPreviewSrcDoc('')
     setPreviewError('')
     setIsEditingProfile(false)
     setCurrentProjectTitle('')
     setProjectTitleStatusMessage('')
+    setFollowUpSuggestions([])
+    setFollowUpSuggestionsNotice('')
+    setIsGeneratingFollowUpSuggestions(false)
+    setProjectFilesStorageWarning('')
+    setProjectFilesStorageMode('supabase')
     setScreen('new-project')
   }, [resetApp])
 
@@ -2135,6 +2144,7 @@ function App() {
   )
 
   const currentTask = tasks[currentTaskIndex] ?? null
+  currentTaskIdRef.current = currentTask?.id ?? null
   const taskDescription = toText(currentTask?.description).trim()
   const taskDescriptionPreview =
     taskDescription.length > 140
@@ -2243,6 +2253,13 @@ function App() {
       setCurrentTaskIndex(taskIndex)
       resetTaskSupportState()
       setFeedbackError('')
+      setFollowUpSuggestions([])
+      setFollowUpSuggestionsNotice('')
+      setIsGeneratingFollowUpSuggestions(false)
+      // Reset scroll on right pane
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0 })
+      }
     },
     [resetTaskSupportState, setCurrentTaskIndex],
   )
@@ -2352,6 +2369,7 @@ function App() {
       return { data: null, error: new Error('No current task selected.') }
     }
 
+    const taskIdAtStart = currentTask.id
     const checkSignature = `${currentTask.id}::${userCode}`
 
     if (
@@ -2384,6 +2402,12 @@ function App() {
         profileToPromptContext(profile),
         skillLevel,
       )
+
+      // Guard: if user switched tasks while the request was in flight, discard result
+      if (currentTaskIdRef.current !== taskIdAtStart) {
+        return { data: null, error: new Error('Task changed during code check.') }
+      }
+
       if (result.error) {
         setFeedbackError(result.error.message)
         return { data: null, error: result.error }
@@ -2421,12 +2445,12 @@ function App() {
   const handleFollowUp = useCallback(
     async (userQuestion) => {
       if (!currentTask) {
-        return
+        return { error: new Error('No current task selected.') }
       }
 
       const normalizedQuestion = userQuestion.trim()
       if (!normalizedQuestion) {
-        return
+        return { error: new Error('Question is empty.') }
       }
 
       setFeedbackError('')
@@ -2451,14 +2475,16 @@ function App() {
 
         if (result.error) {
           setFeedbackError(result.error.message)
-          return
+          return { error: result.error }
         }
 
         currentSessionHistoryRef.current = [...sessionContext, { role: 'ai', message: result.data }]
         setFeedbackHistory((prev) => [...prev, { role: 'ai', message: result.data }])
+        return { error: null }
       } catch (error) {
         console.error(error)
         setFeedbackError(error.message || 'Follow-up request failed.')
+        return { error }
       } finally {
         setIsAskingFollowUp(false)
       }
@@ -2655,9 +2681,15 @@ function App() {
     setCurrentProjectTitle('')
     setScreen('dashboard')
     setUiError('')
+    setFeedbackError('')
     setPreviewSrcDoc('')
     setPreviewError('')
     setProjectTitleStatusMessage('')
+    setFollowUpSuggestions([])
+    setFollowUpSuggestionsNotice('')
+    setIsGeneratingFollowUpSuggestions(false)
+    setProjectFilesStorageWarning('')
+    setProjectFilesStorageMode('supabase')
 
     if (user) {
       await loadProjects(user.id)
@@ -2769,6 +2801,11 @@ function App() {
         (hashState.screen !== 'workspace' && hashState.screen !== 'completion') ||
         !hashState.projectId
       ) {
+        void handleBackToDashboard()
+        return
+      }
+
+      if (isHashRestoreInProgressRef.current) {
         return
       }
 
@@ -2782,6 +2819,7 @@ function App() {
 
       const matchingProject = projects.find((project) => project.id === hashState.projectId)
       if (!matchingProject) {
+        void handleBackToDashboard()
         return
       }
 
@@ -2855,7 +2893,7 @@ function App() {
     )
   }
 
-  if (screen === 'profile-onboarding' && tasks.length === 0 && !currentProjectId) {
+  if (screen === 'profile-onboarding') {
     return (
       <ProfileOnboarding
         initialProfile={profile}
@@ -2916,6 +2954,24 @@ function App() {
         onStartNew={handleStartNewProject}
         onReopenLastTask={handleReopenLastTaskFromCompletion}
         isReopeningTask={isMarkingTaskComplete}
+      />
+    )
+  }
+
+  if (screen !== 'workspace') {
+    return (
+      <Dashboard
+        projects={projects}
+        isLoadingProjects={isLoadingProjects}
+        deletingProjectId={deletingProjectId}
+        isBackfillingProjectTitles={isBackfillingProjectTitles}
+        projectTitleStatusMessage={projectTitleStatusMessage}
+        onStartNewProject={handleStartNewProject}
+        onEditProfile={handleEditProfile}
+        onContinueProject={handleContinueProject}
+        onDeleteProject={handleDeleteProject}
+        onLogOut={handleLogOut}
+        errorMessage={uiError}
       />
     )
   }

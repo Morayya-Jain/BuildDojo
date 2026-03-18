@@ -16,7 +16,7 @@ function ConfigureDojoLoadingScreen() {
               strokeLinecap="round"
               strokeLinejoin="round"
               aria-hidden="true"
-              className="h-16 w-16 animate-spin text-emerald-500 md:h-20 md:w-20"
+              className="h-16 w-16 animate-spin motion-reduce:animate-none text-emerald-500 md:h-20 md:w-20"
               style={{ animationDuration: '3s' }}
             >
               <circle cx="32" cy="32" r="11" />
