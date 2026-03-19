@@ -105,7 +105,19 @@ function normalizeRunnableCode(code, language) {
   }
 }
 
+const EXTERNAL_PLAYGROUNDS = Object.freeze({
+  java: { label: 'JDoodle', url: 'https://www.jdoodle.com/online-java-compiler/' },
+  go: { label: 'Go Playground', url: 'https://go.dev/play/' },
+  rust: { label: 'Rust Playground', url: 'https://play.rust-lang.org/' },
+  csharp: { label: '.NET Fiddle', url: 'https://dotnetfiddle.net/' },
+  ruby: { label: 'Try Ruby', url: 'https://try.ruby-lang.org/' },
+  php: { label: '3v4l', url: 'https://3v4l.org/' },
+  swift: { label: 'SwiftFiddle', url: 'https://swiftfiddle.com/' },
+  kotlin: { label: 'Kotlin Playground', url: 'https://play.kotlinlang.org/' },
+})
+
 export {
+  EXTERNAL_PLAYGROUNDS,
   LANGUAGE_CHOICES,
   LANGUAGE_LABELS,
   canRunInConsole,

@@ -37,7 +37,13 @@
       "Bash(grep:*)",
       "Bash(find /Users/morayyajain/Developer/Hack48-Project -type f -name *.json -o -name *.js -o -name *.jsx -o -name *.html -o -name *.md -o -name .env*)",
       "Bash(npm list:*)",
-      "Bash(sips:*)"
+      "Bash(sips:*)",
+      "Bash(curl -s http://localhost:4173)",
+      "Bash(curl:*)",
+      "WebFetch(domain:localhost)",
+      "Bash(kill %1)",
+      "Bash(wc:*)",
+      "Bash(npm install:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

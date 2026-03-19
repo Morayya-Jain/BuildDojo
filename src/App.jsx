@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AuthScreen from './components/AuthScreen'
+import CenterPaneTabs from './components/CenterPaneTabs'
 import CompletionScreen from './components/CompletionScreen'
 import ConfigureDojoLoadingScreen from './components/ConfigureDojoLoadingScreen'
 import Dashboard from './components/Dashboard'
 import Editor from './components/Editor'
+import ErrorBoundary from './components/ErrorBoundary'
 import FeedbackPanel from './components/FeedbackPanel'
+import PreviewPanel from './components/PreviewPanel'
 import FileTree from './components/FileTree'
 import HintBox from './components/HintBox'
 import LandingPage from './components/LandingPage'
@@ -1973,6 +1976,40 @@ function App() {
     }
   }, [projectFiles])
 
+  // Debounced live preview: auto-rebuild preview 500ms after file content changes
+  const previewDebounceRef = useRef(null)
+  useEffect(() => {
+    const hasHtml = projectFiles.some((f) =>
+      f.path.toLowerCase().endsWith('.html'),
+    )
+    if (!hasHtml) {
+      return
+    }
+
+    clearTimeout(previewDebounceRef.current)
+    previewDebounceRef.current = setTimeout(() => {
+      try {
+        const srcDoc = buildPreviewSrcDoc(projectFiles)
+        setPreviewSrcDoc(srcDoc)
+        setPreviewError('')
+      } catch (error) {
+        console.error(error)
+        setPreviewError(error.message || 'Could not build preview.')
+      }
+    }, 500)
+
+    return () => clearTimeout(previewDebounceRef.current)
+  }, [projectFiles])
+
+  const handlePreviewConsole = useCallback(({ level, message }) => {
+    const prefix = '[Preview]'
+    if (level === 'runtime_error' || level === 'error') {
+      console.error(`${prefix} ${message}`)
+    } else if (level === 'warn') {
+      console.warn(`${prefix} ${message}`)
+    }
+  }, [])
+
   const handleExportProject = useCallback(async () => {
     setIsExporting(true)
     setFileError('')
@@ -3013,7 +3050,7 @@ function App() {
   const editorHeight = isDesktopLayout ? `${editorHeightPx}px` : undefined
 
   const leftWorkspacePane = (
-    <>
+    <ErrorBoundary zone="file explorer">
       <FileTree
         files={projectFiles}
         activeFileId={activeFile?.id || null}
@@ -3032,11 +3069,11 @@ function App() {
           onSelectTask={handleSelectTask}
         />
       </div>
-    </>
+    </ErrorBoundary>
   )
 
   const runAndPreviewPane = (
-    <>
+    <ErrorBoundary zone="code runner">
       <RunConsole
         key={currentTask?.id || 'run-console'}
         code={userCode}
@@ -3044,41 +3081,40 @@ function App() {
         fileLanguage={activeFileLanguage}
         lockedLanguage={lockedTaskLanguage}
         projectLanguages={projectLanguages}
+        projectFiles={projectFiles}
+        activeFilePath={activeFile?.path || ''}
         hasLockedLanguageMismatch={hasLockedLanguageMismatch}
         onResolveLockedLanguageMismatch={handleResolveTaskLanguageMismatch}
         onRunPreview={handleRunPreview}
+        onCheckCode={handleCheckCode}
         fillHeight={isDesktopLayout && !showHtmlPreview}
       />
       {showHtmlPreview ? (
-        <section className="flex flex-col gap-2 rounded-xl border border-slate-300 bg-white p-3">
+        <section className="flex min-h-64 flex-col gap-2 rounded-xl border border-slate-300 bg-white p-3">
           <h2 className="text-lg font-semibold text-slate-900">Live Preview</h2>
-          <p className="text-sm text-slate-700">
-            Click <strong>Refresh Preview</strong> in Run &amp; Output to update this panel.
-          </p>
-          {previewError ? <p className="text-red-600">{previewError}</p> : null}
-          <iframe
-            title="Project preview"
-            srcDoc={previewSrcDoc || '<p>Run preview to render your files.</p>'}
-            sandbox="allow-scripts"
-            className="h-64 w-full rounded-lg border border-slate-300"
+          <PreviewPanel
+            srcDoc={previewSrcDoc}
+            error={previewError}
+            onPreviewConsole={handlePreviewConsole}
           />
         </section>
       ) : null}
-    </>
+    </ErrorBoundary>
   )
 
   const rightWorkspacePane = (
-    <div className="flex flex-col gap-4">
-      <section className="rounded-xl border border-slate-300 bg-slate-50 p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Task {currentTaskIndex + 1}
-            </p>
-            <h2 className="truncate text-base font-semibold text-slate-900">
-              {currentTask?.title || 'No task selected'}
-            </h2>
-          </div>
+    <ErrorBoundary zone="mentor panel">
+      <div className="flex flex-col gap-4">
+        <section className="rounded-xl border border-slate-300 bg-slate-50 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Task {currentTaskIndex + 1}
+              </p>
+              <h2 className="truncate text-base font-semibold text-slate-900">
+                {currentTask?.title || 'No task selected'}
+              </h2>
+            </div>
           <button
             type="button"
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
@@ -3137,7 +3173,8 @@ function App() {
         onAskFollowUp={handleFollowUp}
         errorMessage={feedbackError}
       />
-    </div>
+      </div>
+    </ErrorBoundary>
   )
 
   return (
@@ -3278,86 +3315,111 @@ function App() {
           ref={centerPaneRef}
           className="flex min-w-0 flex-1 flex-col gap-3 border-b border-slate-200 bg-white p-3 md:h-[calc(100svh-150px)] md:border-b-0 md:border-r md:p-4"
         >
-          <div className={isDesktopLayout ? 'min-h-0 shrink-0' : ''}>
-            <Editor
-              projectDescription={projectDescription}
-              value={activeFile?.content || ''}
-              onChange={handleEditorChange}
-              readOnly={Boolean(currentTask?.completed) && firstIncompleteIndex !== -1}
-              language={editorLanguage}
-              tabs={fileTabs}
-              activeTabId={activeFile?.id || null}
-              onSelectTab={handleSelectFile}
-              height={editorHeight}
-            />
-          </div>
-
-          {isDesktopLayout && !bottomPaneCollapsed ? (
-            <div
-              className="group relative -my-1 flex h-2 shrink-0 cursor-row-resize items-center justify-center"
-              onPointerDown={beginCenterResize}
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize editor and output panes"
-            >
-              <div
-                className={`h-px w-full bg-slate-300 transition-opacity ${
-                  isCenterDragActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                }`}
-              />
-              <button
-                type="button"
-                className={`absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 shadow-sm transition-opacity hover:bg-slate-100 ${
-                  isCenterDragActive
-                    ? 'opacity-100'
-                    : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
-                }`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={toggleBottomPaneCollapsed}
-                aria-label="Collapse run and output pane"
-              >
-                -
-              </button>
-            </div>
-          ) : null}
-
-          {isDesktopLayout ? (
-            bottomPaneCollapsed ? (
-              <div className="flex h-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-50">
-                <button
-                  type="button"
-                  className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                  onClick={toggleBottomPaneCollapsed}
-                >
-                  Expand Run &amp; Output
-                </button>
-              </div>
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div
-                  className={`flex min-h-0 flex-1 flex-col ${
-                    showHtmlPreview ? 'gap-3 overflow-auto' : 'overflow-hidden'
-                  }`}
-                >
-                  {runAndPreviewPane}
+          {isDesktopLayout && showHtmlPreview ? (
+            <CenterPaneTabs
+              codeContent={
+                <div className="min-h-0 flex-1">
+                  <Editor
+                    projectDescription={projectDescription}
+                    value={activeFile?.content || ''}
+                    onChange={handleEditorChange}
+                    readOnly={Boolean(currentTask?.completed) && firstIncompleteIndex !== -1}
+                    language={editorLanguage}
+                    tabs={fileTabs}
+                    activeTabId={activeFile?.id || null}
+                    onSelectTab={handleSelectFile}
+                  />
                 </div>
+              }
+              previewContent={
+                <PreviewPanel
+                  srcDoc={previewSrcDoc}
+                  error={previewError}
+                  onPreviewConsole={handlePreviewConsole}
+                />
+              }
+              consoleContent={runAndPreviewPane}
+            />
+          ) : (
+            <>
+              <div className={isDesktopLayout ? 'min-h-0 shrink-0' : ''}>
+                <Editor
+                  projectDescription={projectDescription}
+                  value={activeFile?.content || ''}
+                  onChange={handleEditorChange}
+                  readOnly={Boolean(currentTask?.completed) && firstIncompleteIndex !== -1}
+                  language={editorLanguage}
+                  tabs={fileTabs}
+                  activeTabId={activeFile?.id || null}
+                  onSelectTab={handleSelectFile}
+                  height={editorHeight}
+                />
+              </div>
+
+              {isDesktopLayout && !bottomPaneCollapsed ? (
                 <div
-                  className="group relative mt-1 flex h-2 shrink-0 cursor-row-resize items-center justify-center"
-                  onPointerDown={beginCenterBottomResize}
+                  className="group relative -my-1 flex h-2 shrink-0 cursor-row-resize items-center justify-center"
+                  onPointerDown={beginCenterResize}
                   role="separator"
                   aria-orientation="horizontal"
-                  aria-label="Resize output pane from bottom edge"
+                  aria-label="Resize editor and output panes"
                 >
                   <div
                     className={`h-px w-full bg-slate-300 transition-opacity ${
-                      isCenterBottomDragActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      isCenterDragActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                     }`}
                   />
+                  <button
+                    type="button"
+                    className={`absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md border border-slate-300 bg-white text-xs font-semibold text-slate-700 shadow-sm transition-opacity hover:bg-slate-100 ${
+                      isCenterDragActive
+                        ? 'opacity-100'
+                        : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                    }`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={toggleBottomPaneCollapsed}
+                    aria-label="Collapse run and output pane"
+                  >
+                    -
+                  </button>
                 </div>
-              </div>
-            )
-          ) : (
-            runAndPreviewPane
+              ) : null}
+
+              {isDesktopLayout ? (
+                bottomPaneCollapsed ? (
+                  <div className="flex h-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-50">
+                    <button
+                      type="button"
+                      className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                      onClick={toggleBottomPaneCollapsed}
+                    >
+                      Expand Run &amp; Output
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                      {runAndPreviewPane}
+                    </div>
+                    <div
+                      className="group relative mt-1 flex h-2 shrink-0 cursor-row-resize items-center justify-center"
+                      onPointerDown={beginCenterBottomResize}
+                      role="separator"
+                      aria-orientation="horizontal"
+                      aria-label="Resize output pane from bottom edge"
+                    >
+                      <div
+                        className={`h-px w-full bg-slate-300 transition-opacity ${
+                          isCenterBottomDragActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                )
+              ) : (
+                runAndPreviewPane
+              )}
+            </>
           )}
         </div>
 

@@ -1,4 +1,5 @@
 import { detectLanguage } from './detectLanguage.js'
+import { buildBridgeScript, stripMatchingAssetTags } from './previewBridge.js'
 import { sanitizeLanguage } from './runtimeUtils.js'
 
 const FILE_NAME_REGEX = /^[a-zA-Z0-9._-]+$/
@@ -449,27 +450,33 @@ function buildPreviewSrcDoc(files = []) {
 
   let html = htmlFile?.content?.trim()
   if (!html) {
-    html = '<!doctype html><html><body><p>No HTML file found. Add index.html to preview.</p></body></html>'
+    html = '<!doctype html><html><head></head><body><p>No HTML file found. Add index.html to preview.</p></body></html>'
   }
 
-  const cssContent = normalized
-    .filter((file) => file.path.toLowerCase().endsWith('.css'))
-    .map((file) => file.content)
-    .join('\n')
-    .trim()
+  const cssFiles = normalized.filter((file) => file.path.toLowerCase().endsWith('.css'))
+  const jsFiles = normalized.filter((file) => {
+    const lowerPath = file.path.toLowerCase()
+    return (
+      lowerPath.endsWith('.js') ||
+      lowerPath.endsWith('.mjs') ||
+      lowerPath.endsWith('.cjs')
+    )
+  })
 
-  const jsContent = normalized
-    .filter((file) => {
-      const lowerPath = file.path.toLowerCase()
-      return (
-        lowerPath.endsWith('.js') ||
-        lowerPath.endsWith('.mjs') ||
-        lowerPath.endsWith('.cjs')
-      )
-    })
-    .map((file) => file.content)
-    .join('\n')
-    .trim()
+  // Strip <link> and <script src> tags that reference project files to prevent 404s
+  const assetPaths = [...cssFiles, ...jsFiles].map((f) => f.path)
+  html = stripMatchingAssetTags(html, assetPaths)
+
+  // Inject console bridge script early so it captures all output
+  const bridgeScript = buildBridgeScript()
+  if (/<head[^>]*>/i.test(html)) {
+    html = html.replace(/<head[^>]*>/i, (match) => `${match}\n${bridgeScript}`)
+  } else {
+    html = `${bridgeScript}\n${html}`
+  }
+
+  const cssContent = cssFiles.map((file) => file.content).join('\n').trim()
+  const jsContent = jsFiles.map((file) => file.content).join('\n').trim()
 
   if (cssContent) {
     const styleTag = `\n<style data-source="injected-preview">\n${cssContent}\n</style>\n`

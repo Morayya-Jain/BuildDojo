@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buttonPrimary, buttonSecondary, sizeSm } from '../lib/buttonStyles'
 import {
+  EXTERNAL_PLAYGROUNDS,
   LANGUAGE_CHOICES,
   canRunInConsole,
   getProjectLanguageChoices,
@@ -10,8 +11,12 @@ import {
   resolveRuntimeLanguage,
   sanitizeLanguage,
 } from '../lib/runtimeUtils'
-
-const PYODIDE_BASE_URL = import.meta.env.VITE_PYODIDE_BASE_URL?.trim() || ''
+import { bundleProjectFiles, hasModuleSyntax } from '../lib/bundler'
+import {
+  createJavascriptWorkerScript,
+  createPythonWorkerScript,
+  PYODIDE_BASE_URL,
+} from '../lib/workerScripts'
 
 let sqlRuntimePromise = null
 
@@ -35,158 +40,6 @@ function toText(value) {
   }
 }
 
-function createJavascriptWorkerScript() {
-  return `
-const formatValue = (value) => {
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (value == null) return 'undefined'
-
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-self.onmessage = async (event) => {
-  const { command, code, runId } = event.data || {}
-  if (command !== 'run') {
-    return
-  }
-
-  const emit = (type, text) => self.postMessage({ runId, type, text })
-  const proxyConsole = {
-    log: (...args) => emit('log', args.map(formatValue).join(' ')),
-    info: (...args) => emit('info', args.map(formatValue).join(' ')),
-    warn: (...args) => emit('warn', args.map(formatValue).join(' ')),
-    error: (...args) => emit('stderr', args.map(formatValue).join(' ')),
-  }
-
-  const originalConsole = self.console
-  self.console = proxyConsole
-
-  try {
-    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-    const runUserCode = new AsyncFunction(code || '')
-    const result = await runUserCode()
-
-    if (typeof result !== 'undefined') {
-      emit('result', formatValue(result))
-    }
-
-    emit('done', 'Execution finished.')
-  } catch (error) {
-    emit('runtime_error', error?.stack || error?.message || String(error))
-  } finally {
-    self.console = originalConsole
-  }
-}
-`
-}
-
-function createPythonWorkerScript(preferredBaseUrl) {
-  return `
-let pyodideReadyPromise = null
-const preferredBaseUrl = ${JSON.stringify(preferredBaseUrl || '')}
-
-const formatValue = (value) => {
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (value == null) return 'undefined'
-
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-const emit = (runId, type, text) => self.postMessage({ runId, type, text })
-
-function normalizeBase(url) {
-  if (!url) {
-    return ''
-  }
-
-  return url.endsWith('/') ? url : url + '/'
-}
-
-async function getPyodideInstance(runId) {
-  if (!pyodideReadyPromise) {
-    pyodideReadyPromise = (async () => {
-      const candidates = [
-        normalizeBase(preferredBaseUrl),
-        normalizeBase(self.location.origin + '/pyodide/'),
-        'https://cdn.jsdelivr.net/pyodide/v0.27.7/full/',
-        'https://unpkg.com/pyodide@0.27.7/',
-      ].filter(Boolean)
-
-      const uniqueCandidates = []
-      candidates.forEach((candidate) => {
-        if (!uniqueCandidates.includes(candidate)) {
-          uniqueCandidates.push(candidate)
-        }
-      })
-
-      let lastError = null
-
-      for (const base of uniqueCandidates) {
-        try {
-          emit(runId, 'info', 'Preparing Python runtime...')
-          importScripts(base + 'pyodide.js')
-          const pyodide = await loadPyodide({ indexURL: base })
-
-          pyodide.setStdout({
-            batched: (text) => emit(runId, 'log', text),
-          })
-
-          pyodide.setStderr({
-            batched: (text) => emit(runId, 'stderr', text),
-          })
-
-          emit(runId, 'info', 'Python runtime ready.')
-          return pyodide
-        } catch (error) {
-          lastError = error
-        }
-      }
-
-      throw new Error(
-        lastError?.message ||
-          'Could not load Python runtime from local or CDN sources.',
-      )
-    })()
-  }
-
-  return pyodideReadyPromise
-}
-
-self.onmessage = async (event) => {
-  const { command, code, runId } = event.data || {}
-  if (command !== 'run') {
-    return
-  }
-
-  try {
-    const pyodide = await getPyodideInstance(runId)
-    const result = await pyodide.runPythonAsync(code || '')
-
-    if (typeof result !== 'undefined' && result !== null) {
-      emit(
-        runId,
-        'result',
-        formatValue(result.toString ? result.toString() : result),
-      )
-    }
-
-    emit(runId, 'done', 'Execution finished.')
-  } catch (error) {
-    emit(runId, 'runtime_error', error?.message || String(error))
-  }
-}
-`
-}
 
 function extractTypeScriptDiagnostics(tsApi, diagnostics = []) {
   const errors = diagnostics.filter(
@@ -253,9 +106,12 @@ function RunConsole({
   fileLanguage = '',
   lockedLanguage = '',
   projectLanguages = null,
+  projectFiles = [],
+  activeFilePath = '',
   hasLockedLanguageMismatch = false,
   onResolveLockedLanguageMismatch = null,
   onRunPreview,
+  onCheckCode = null,
   fillHeight = false,
 }) {
   const [selectedLanguage, setSelectedLanguage] = useState('auto')
@@ -263,11 +119,15 @@ function RunConsole({
   const [isRunning, setIsRunning] = useState(false)
   const [isPreparingRuntime, setIsPreparingRuntime] = useState(false)
 
+  const [elapsedMs, setElapsedMs] = useState(0)
+
   const isMountedRef = useRef(true)
   const workersRef = useRef({ javascript: null, python: null })
   const pendingWorkerRunRef = useRef(null)
   const sqlCancelTokenRef = useRef(null)
   const runCounterRef = useRef(0)
+  const pythonRunCountRef = useRef(0)
+  const timerIntervalRef = useRef(null)
   const outputPanelRef = useRef(null)
 
   const normalizedLockedLanguage = sanitizeLanguage(lockedLanguage)
@@ -340,6 +200,20 @@ function RunConsole({
     setOutputLines([])
   }, [])
 
+  const startTimer = useCallback(() => {
+    setElapsedMs(0)
+    clearInterval(timerIntervalRef.current)
+    const start = Date.now()
+    timerIntervalRef.current = setInterval(() => {
+      setElapsedMs(Date.now() - start)
+    }, 100)
+  }, [])
+
+  const stopTimer = useCallback(() => {
+    clearInterval(timerIntervalRef.current)
+    timerIntervalRef.current = null
+  }, [])
+
   const terminateWorker = useCallback((kind) => {
     const worker = workersRef.current[kind]
     if (!worker) {
@@ -359,6 +233,7 @@ function RunConsole({
 
     clearTimeout(pending.timeoutId)
     pendingWorkerRunRef.current = null
+    stopTimer()
 
     if (!isMountedRef.current) {
       return
@@ -366,7 +241,7 @@ function RunConsole({
 
     setIsRunning(false)
     setIsPreparingRuntime(false)
-  }, [])
+  }, [stopTimer])
 
   const createWorker = useCallback(
     (kind) => {
@@ -448,6 +323,15 @@ function RunConsole({
         setIsRunning(true)
         setIsPreparingRuntime(kind === 'python')
         setOutputLines([])
+        startTimer()
+
+        if (kind === 'python') {
+          pythonRunCountRef.current += 1
+          if (pythonRunCountRef.current > 10) {
+            terminateWorker('python')
+            pythonRunCountRef.current = 0
+          }
+        }
 
         const worker = getWorker(kind)
         const runId = runCounterRef.current + 1
@@ -485,7 +369,7 @@ function RunConsole({
         setIsPreparingRuntime(false)
       }
     },
-    [appendLine, finishWorkerRun, getWorker, terminateWorker],
+    [appendLine, finishWorkerRun, getWorker, startTimer, terminateWorker],
   )
 
   const runSqlCode = useCallback(
@@ -504,6 +388,7 @@ function RunConsole({
       setIsRunning(true)
       setIsPreparingRuntime(true)
       setOutputLines([])
+      startTimer()
 
       let db = null
 
@@ -571,14 +456,33 @@ function RunConsole({
           sqlCancelTokenRef.current = null
         }
 
+        stopTimer()
+
         if (isMountedRef.current) {
           setIsRunning(false)
           setIsPreparingRuntime(false)
         }
       }
     },
-    [appendLine],
+    [appendLine, startTimer, stopTimer],
   )
+
+  const handleStop = useCallback(() => {
+    const pending = pendingWorkerRunRef.current
+    if (pending) {
+      terminateWorker(pending.kind)
+      finishWorkerRun(pending.kind, pending.runId)
+      appendLine('warn', 'Execution stopped by user.')
+    }
+
+    if (sqlCancelTokenRef.current && !sqlCancelTokenRef.current.cancelled) {
+      sqlCancelTokenRef.current.cancelled = true
+      appendLine('warn', 'SQL execution stopped by user.')
+      stopTimer()
+      setIsRunning(false)
+      setIsPreparingRuntime(false)
+    }
+  }, [appendLine, finishWorkerRun, stopTimer, terminateWorker])
 
   const handleRunCode = useCallback(async () => {
     openOutputPanel({ scroll: true })
@@ -608,9 +512,27 @@ function RunConsole({
       }
 
       if (isJavascript) {
+        let sourceCode = normalized.code
+
+        // Bundle with esbuild if code has import/require and we have multiple project files
+        if (hasModuleSyntax(sourceCode) && projectFiles.length > 1 && activeFilePath) {
+          appendLine('info', 'Bundling modules...')
+          const bundled = await bundleProjectFiles(projectFiles, activeFilePath)
+          if (!bundled.ok) {
+            replaceOutput(
+              (bundled.errors || ['Bundling failed.']).map((message) => ({
+                type: 'runtime_error',
+                message,
+              })),
+            )
+            return
+          }
+          sourceCode = bundled.code
+        }
+
         await runInWorker({
           kind: 'javascript',
-          sourceCode: normalized.code,
+          sourceCode,
           timeoutMs: 5000,
         })
         return
@@ -638,9 +560,32 @@ function RunConsole({
           return
         }
 
+        let tsSourceCode = transpileResult.outputText
+
+        // Bundle transpiled TypeScript if it has import/require
+        if (hasModuleSyntax(tsSourceCode) && projectFiles.length > 1 && activeFilePath) {
+          appendLine('info', 'Bundling modules...')
+          const bundled = await bundleProjectFiles(
+            projectFiles.map((f) =>
+              f.path === activeFilePath ? { ...f, content: tsSourceCode } : f,
+            ),
+            activeFilePath,
+          )
+          if (!bundled.ok) {
+            replaceOutput(
+              (bundled.errors || ['Bundling failed.']).map((message) => ({
+                type: 'runtime_error',
+                message,
+              })),
+            )
+            return
+          }
+          tsSourceCode = bundled.code
+        }
+
         await runInWorker({
           kind: 'javascript',
-          sourceCode: transpileResult.outputText,
+          sourceCode: tsSourceCode,
           timeoutMs: 5000,
         })
         return
@@ -681,6 +626,9 @@ function RunConsole({
     replaceOutput,
     runInWorker,
     runSqlCode,
+    projectFiles,
+    activeFilePath,
+    appendLine,
   ])
 
   useEffect(() => {
@@ -702,8 +650,24 @@ function RunConsole({
 
       terminateWorker('javascript')
       terminateWorker('python')
+      clearInterval(timerIntervalRef.current)
     }
   }, [terminateWorker])
+
+  // Keyboard shortcut: Ctrl/Cmd + Enter to run code
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault()
+        if (!isRunning) {
+          handleRunCode()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleRunCode, isRunning])
 
   const runButtonText = useMemo(() => {
     if (!isRunning) {
@@ -771,6 +735,16 @@ function RunConsole({
           {runButtonText}
         </button>
 
+        {isRunning ? (
+          <button
+            type="button"
+            className={`rounded-md border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 ${sizeSm} ${compactActionButtonClass}`}
+            onClick={handleStop}
+          >
+            Stop
+          </button>
+        ) : null}
+
         <button
           type="button"
           className={`${buttonSecondary} ${sizeSm} ${compactActionButtonClass}`}
@@ -787,6 +761,12 @@ function RunConsole({
         >
           Open Output
         </button>
+
+        {isRunning && elapsedMs > 0 ? (
+          <span className="text-xs text-slate-500">
+            {(elapsedMs / 1000).toFixed(1)}s
+          </span>
+        ) : null}
       </div>
 
       {showLockedLanguageMismatchNotice ? (
@@ -815,10 +795,36 @@ function RunConsole({
         aria-live="polite"
       >
         {!isConsoleRunnable && !canTriggerPreview ? (
-          <p className="text-slate-400">
-            Browser execution is not available for {prettyLanguageName(resolvedLanguage)}.
-            Use the mentor to check your code instead.
-          </p>
+          <div className="flex flex-col gap-3">
+            <p className="text-slate-400">
+              Browser execution is not available for {prettyLanguageName(resolvedLanguage)}.
+            </p>
+            {typeof onCheckCode === 'function' ? (
+              <button
+                type="button"
+                className="w-fit rounded-md border border-green-600 bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-500"
+                onClick={onCheckCode}
+              >
+                Ask Mentor to Review
+              </button>
+            ) : null}
+            {EXTERNAL_PLAYGROUNDS[resolvedLanguage] ? (
+              <p className="text-xs text-slate-500">
+                Try it online:{' '}
+                <a
+                  href={EXTERNAL_PLAYGROUNDS[resolvedLanguage].url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-green-400 underline hover:text-green-300"
+                >
+                  {EXTERNAL_PLAYGROUNDS[resolvedLanguage].label}
+                </a>
+              </p>
+            ) : null}
+            <p className="text-[11px] text-slate-600">
+              Cloud execution coming soon.
+            </p>
+          </div>
         ) : outputLines.length === 0 ? (
           <p className="text-slate-300">Run your code to see output.</p>
         ) : (
