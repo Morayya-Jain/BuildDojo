@@ -12,6 +12,14 @@ function PreviewPanel({ srcDoc, error, onPreviewConsole }) {
 
   const handleMessage = useCallback(
     (event) => {
+      // Only accept messages from our own iframe
+      if (
+        !iframeRef.current ||
+        event.source !== iframeRef.current.contentWindow
+      ) {
+        return
+      }
+
       if (!event.data || event.data.type !== 'preview-console') {
         return
       }
@@ -43,7 +51,7 @@ function PreviewPanel({ srcDoc, error, onPreviewConsole }) {
             type="button"
             className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
               activePreset === preset.label
-                ? 'border-green-600 bg-green-50 text-green-700'
+                ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
                 : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
             }`}
             onClick={() => setActivePreset(preset.label)}

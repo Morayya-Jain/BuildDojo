@@ -1,4 +1,12 @@
 /**
+ * Generates a restrictive CSP meta tag for the preview iframe.
+ * Blocks external network requests while allowing inline scripts/styles.
+ */
+function buildPreviewCspTag() {
+  return `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:;">`
+}
+
+/**
  * Generates a bridge script that captures console output and errors
  * from the preview iframe and forwards them to the parent window
  * via postMessage.
@@ -80,4 +88,4 @@ function stripMatchingAssetTags(html, projectFilePaths) {
   return result
 }
 
-export { buildBridgeScript, stripMatchingAssetTags }
+export { buildBridgeScript, buildPreviewCspTag, stripMatchingAssetTags }

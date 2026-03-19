@@ -10,7 +10,7 @@ async function ensureEsbuild() {
     esbuildInitPromise = (async () => {
       const esbuild = await import('esbuild-wasm')
       await esbuild.initialize({
-        wasmURL: 'https://unpkg.com/esbuild-wasm@latest/esbuild.wasm',
+        wasmURL: 'https://unpkg.com/esbuild-wasm@0.27.4/esbuild.wasm',
       })
       return esbuild
     })()

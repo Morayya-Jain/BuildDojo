@@ -2003,9 +2003,11 @@ function App() {
 
   const handlePreviewConsole = useCallback(({ level, message }) => {
     const prefix = '[Preview]'
-    if (level === 'runtime_error' || level === 'error') {
+    if (level === 'runtime_error' || level === 'error' || level === 'stderr') {
       console.error(`${prefix} ${message}`)
     } else if (level === 'warn') {
+      console.warn(`${prefix} ${message}`)
+    } else {
       console.warn(`${prefix} ${message}`)
     }
   }, [])
@@ -3072,7 +3074,7 @@ function App() {
     </ErrorBoundary>
   )
 
-  const runAndPreviewPane = (
+  const consolePane = (
     <ErrorBoundary zone="code runner">
       <RunConsole
         key={currentTask?.id || 'run-console'}
@@ -3089,17 +3091,26 @@ function App() {
         onCheckCode={handleCheckCode}
         fillHeight={isDesktopLayout && !showHtmlPreview}
       />
-      {showHtmlPreview ? (
-        <section className="flex min-h-64 flex-col gap-2 rounded-xl border border-slate-300 bg-white p-3">
-          <h2 className="text-lg font-semibold text-slate-900">Live Preview</h2>
-          <PreviewPanel
-            srcDoc={previewSrcDoc}
-            error={previewError}
-            onPreviewConsole={handlePreviewConsole}
-          />
-        </section>
-      ) : null}
     </ErrorBoundary>
+  )
+
+  const previewPane = showHtmlPreview ? (
+    <section className="flex min-h-64 flex-col gap-2 rounded-xl border border-slate-300 bg-white p-3">
+      <h2 className="text-lg font-semibold text-slate-900">Live Preview</h2>
+      <PreviewPanel
+        srcDoc={previewSrcDoc}
+        error={previewError}
+        onPreviewConsole={handlePreviewConsole}
+      />
+    </section>
+  ) : null
+
+  // Combined console + preview for non-tabbed layouts (mobile, non-HTML projects)
+  const runAndPreviewPane = (
+    <>
+      {consolePane}
+      {previewPane}
+    </>
   )
 
   const rightWorkspacePane = (
@@ -3328,6 +3339,7 @@ function App() {
                     tabs={fileTabs}
                     activeTabId={activeFile?.id || null}
                     onSelectTab={handleSelectFile}
+                    height="100%"
                   />
                 </div>
               }
@@ -3338,7 +3350,7 @@ function App() {
                   onPreviewConsole={handlePreviewConsole}
                 />
               }
-              consoleContent={runAndPreviewPane}
+              consoleContent={consolePane}
             />
           ) : (
             <>

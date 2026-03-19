@@ -1,5 +1,5 @@
 import { detectLanguage } from './detectLanguage.js'
-import { buildBridgeScript, stripMatchingAssetTags } from './previewBridge.js'
+import { buildBridgeScript, buildPreviewCspTag, stripMatchingAssetTags } from './previewBridge.js'
 import { sanitizeLanguage } from './runtimeUtils.js'
 
 const FILE_NAME_REGEX = /^[a-zA-Z0-9._-]+$/
@@ -467,12 +467,13 @@ function buildPreviewSrcDoc(files = []) {
   const assetPaths = [...cssFiles, ...jsFiles].map((f) => f.path)
   html = stripMatchingAssetTags(html, assetPaths)
 
-  // Inject console bridge script early so it captures all output
+  // Inject CSP and console bridge script early so it captures all output
+  const cspTag = buildPreviewCspTag()
   const bridgeScript = buildBridgeScript()
   if (/<head[^>]*>/i.test(html)) {
-    html = html.replace(/<head[^>]*>/i, (match) => `${match}\n${bridgeScript}`)
+    html = html.replace(/<head[^>]*>/i, (match) => `${match}\n${cspTag}\n${bridgeScript}`)
   } else {
-    html = `${bridgeScript}\n${html}`
+    html = `${cspTag}\n${bridgeScript}\n${html}`
   }
 
   const cssContent = cssFiles.map((file) => file.content).join('\n').trim()

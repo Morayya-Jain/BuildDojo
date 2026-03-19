@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { buttonPrimary, buttonSecondary, sizeSm } from '../lib/buttonStyles'
+import { buttonDanger, buttonPrimary, buttonSecondary, sizeSm } from '../lib/buttonStyles'
 import {
   EXTERNAL_PLAYGROUNDS,
   LANGUAGE_CHOICES,
@@ -472,13 +472,14 @@ function RunConsole({
     if (pending) {
       terminateWorker(pending.kind)
       finishWorkerRun(pending.kind, pending.runId)
+      stopTimer()
       appendLine('warn', 'Execution stopped by user.')
     }
 
     if (sqlCancelTokenRef.current && !sqlCancelTokenRef.current.cancelled) {
       sqlCancelTokenRef.current.cancelled = true
-      appendLine('warn', 'SQL execution stopped by user.')
       stopTimer()
+      appendLine('warn', 'SQL execution stopped by user.')
       setIsRunning(false)
       setIsPreparingRuntime(false)
     }
@@ -655,9 +656,14 @@ function RunConsole({
   }, [terminateWorker])
 
   // Keyboard shortcut: Ctrl/Cmd + Enter to run code
+  // Only fires when not focused on text inputs, textareas, or contenteditable elements
   useEffect(() => {
     const handleKeyDown = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        const tag = event.target?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) {
+          return
+        }
         event.preventDefault()
         if (!isRunning) {
           handleRunCode()
@@ -738,7 +744,7 @@ function RunConsole({
         {isRunning ? (
           <button
             type="button"
-            className={`rounded-md border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 ${sizeSm} ${compactActionButtonClass}`}
+            className={`${buttonDanger} ${sizeSm} ${compactActionButtonClass}`}
             onClick={handleStop}
           >
             Stop
@@ -802,7 +808,7 @@ function RunConsole({
             {typeof onCheckCode === 'function' ? (
               <button
                 type="button"
-                className="w-fit rounded-md border border-green-600 bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-500"
+                className={`${buttonPrimary} ${sizeSm} w-fit`}
                 onClick={onCheckCode}
               >
                 Ask Mentor to Review
@@ -815,7 +821,7 @@ function RunConsole({
                   href={EXTERNAL_PLAYGROUNDS[resolvedLanguage].url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-green-400 underline hover:text-green-300"
+                  className="text-emerald-400 underline hover:text-emerald-300"
                 >
                   {EXTERNAL_PLAYGROUNDS[resolvedLanguage].label}
                 </a>

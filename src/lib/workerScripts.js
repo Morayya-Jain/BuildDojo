@@ -53,6 +53,7 @@ self.onmessage = async (event) => {
 function createPythonWorkerScript(preferredBaseUrl) {
   return `
 let pyodideReadyPromise = null
+let currentRunId = null
 const preferredBaseUrl = ${JSON.stringify(preferredBaseUrl || '')}
 
 const formatValue = (value) => {
@@ -110,11 +111,11 @@ async function getPyodideInstance(runId) {
         const pyodide = await loadPyodide({ indexURL: base })
 
         pyodide.setStdout({
-          batched: (text) => emit(runId, 'log', text),
+          batched: (text) => emit(currentRunId, 'log', text),
         })
 
         pyodide.setStderr({
-          batched: (text) => emit(runId, 'stderr', text),
+          batched: (text) => emit(currentRunId, 'stderr', text),
         })
 
         emit(runId, 'info', 'Python runtime ready.')
@@ -138,6 +139,8 @@ self.onmessage = async (event) => {
   if (command !== 'run') {
     return
   }
+
+  currentRunId = runId
 
   try {
     const pyodide = await getPyodideInstance(runId)
