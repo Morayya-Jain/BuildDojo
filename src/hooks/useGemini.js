@@ -1052,7 +1052,7 @@ async function callGemini(prompt, options = {}) {
     model = GEMINI_MODEL_FLASH,
     responseMimeType = null,
     responseSchema = null,
-    thinkingBudget = null,
+    thinkingBudget = 1024,
     retryCount = 0,
     timeoutMs = TIMEOUT_MS,
   } = options
@@ -1072,6 +1072,7 @@ async function callGemini(prompt, options = {}) {
     maxOutputTokens,
     ...(responseMimeType ? { responseMimeType } : {}),
     ...(responseSchema ? { responseSchema } : {}),
+    ...(thinkingBudget != null ? { thinkingConfig: { thinkingBudget } } : {}),
   }
 
   const requestBody = {
@@ -1081,9 +1082,6 @@ async function callGemini(prompt, options = {}) {
       },
     ],
     generationConfig,
-  }
-  if (thinkingBudget != null) {
-    requestBody.thinkingConfig = { thinkingBudget }
   }
 
   let lastError = null
@@ -1595,7 +1593,7 @@ export function useGemini() {
       )
       const firstAttempt = await callRoadmapAttempt(basePrompt, {
         temperature: 0.65,
-        maxOutputTokens: 2000,
+        maxOutputTokens: 8192,
       })
       if (firstAttempt.error) {
         return {
@@ -1610,7 +1608,7 @@ export function useGemini() {
       } catch (firstParseError) {
         const secondAttempt = await callRoadmapAttempt(basePrompt, {
           temperature: 0.35,
-          maxOutputTokens: 2000,
+          maxOutputTokens: 8192,
         })
 
         if (secondAttempt.error) {
@@ -1633,7 +1631,7 @@ export function useGemini() {
           )
           const repairAttempt = await callRoadmapAttempt(repairPrompt, {
             temperature: 0.25,
-            maxOutputTokens: 1600,
+            maxOutputTokens: 8192,
           })
 
           if (repairAttempt.error) {
@@ -1654,7 +1652,7 @@ export function useGemini() {
             )
             const outlineAttempt = await callRoadmapAttempt(outlinePrompt, {
               temperature: 0.2,
-              maxOutputTokens: 320,
+              maxOutputTokens: 2048,
               useJsonSchema: false,
             })
 
@@ -1698,6 +1696,7 @@ export function useGemini() {
       const result = await callGemini(prompt, {
         temperature: 0.3,
         maxOutputTokens: 48,
+        thinkingBudget: 0,
         model,
       })
 
