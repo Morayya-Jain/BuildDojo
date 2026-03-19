@@ -2007,8 +2007,6 @@ function App() {
       console.error(`${prefix} ${message}`)
     } else if (level === 'warn') {
       console.warn(`${prefix} ${message}`)
-    } else {
-      console.warn(`${prefix} ${message}`)
     }
   }, [])
 
@@ -3326,6 +3324,7 @@ function App() {
           ref={centerPaneRef}
           className="flex min-w-0 flex-1 flex-col gap-3 border-b border-slate-200 bg-white p-3 md:h-[calc(100svh-150px)] md:border-b-0 md:border-r md:p-4"
         >
+          <ErrorBoundary zone="editor">
           {isDesktopLayout && showHtmlPreview ? (
             <CenterPaneTabs
               codeContent={
@@ -3433,6 +3432,7 @@ function App() {
               )}
             </>
           )}
+          </ErrorBoundary>
         </div>
 
         <div

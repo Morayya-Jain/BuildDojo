@@ -20,7 +20,8 @@ function buildBridgeScript() {
         type: 'preview-console',
         level: level,
         args: args.map(function(a) {
-          return typeof a === 'object' ? JSON.stringify(a) : String(a);
+          if (typeof a !== 'object' || a === null) return String(a);
+          try { return JSON.stringify(a); } catch(e) { return '[Object]'; }
         })
       }, '*');
     } catch(e) {}

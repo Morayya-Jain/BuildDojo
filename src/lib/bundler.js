@@ -115,8 +115,13 @@ async function bundleProjectFiles(files, entryPoint) {
       setup(build) {
         // Resolve all imports against the project file map
         build.onResolve({ filter: /.*/ }, (args) => {
-          // External URLs and node builtins pass through
+          // External URLs pass through
           if (args.path.startsWith('http://') || args.path.startsWith('https://')) {
+            return { external: true }
+          }
+
+          // Block path traversal
+          if (args.path.includes('..')) {
             return { external: true }
           }
 
@@ -154,8 +159,19 @@ async function bundleProjectFiles(files, entryPoint) {
       },
     }
 
+    // Use stdin to avoid esbuild trying to resolve the entry from the real filesystem.
+    // The entry content is fed directly, and imports are resolved through the virtual plugin.
+    const entryContent = fileMap.get(entryPoint)
+    const entryLastSlash = entryPoint.lastIndexOf('/')
+    const entryDir = entryLastSlash >= 0 ? entryPoint.slice(0, entryLastSlash) : ''
+
     const result = await esbuild.build({
-      entryPoints: [entryPoint],
+      stdin: {
+        contents: entryContent,
+        loader: inferLoader(entryPoint),
+        resolveDir: entryDir,
+        sourcefile: entryPoint,
+      },
       bundle: true,
       write: false,
       format: 'iife',

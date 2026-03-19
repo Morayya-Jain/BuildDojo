@@ -439,7 +439,11 @@ function createDefaultProjectFiles(
 }
 
 function escapeInlineScriptContent(value) {
-  return value.replace(/<\/script>/gi, '<\\/script>')
+  return value.replace(/<\//g, '<\\/')
+}
+
+function escapeInlineStyleContent(value) {
+  return value.replace(/<\//g, '<\\/')
 }
 
 function buildPreviewSrcDoc(files = []) {
@@ -480,7 +484,7 @@ function buildPreviewSrcDoc(files = []) {
   const jsContent = jsFiles.map((file) => file.content).join('\n').trim()
 
   if (cssContent) {
-    const styleTag = `\n<style data-source="injected-preview">\n${cssContent}\n</style>\n`
+    const styleTag = `\n<style data-source="injected-preview">\n${escapeInlineStyleContent(cssContent)}\n</style>\n`
     html = /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${styleTag}</head>`) : `${styleTag}${html}`
   }
 

@@ -472,7 +472,6 @@ function RunConsole({
     if (pending) {
       terminateWorker(pending.kind)
       finishWorkerRun(pending.kind, pending.runId)
-      stopTimer()
       appendLine('warn', 'Execution stopped by user.')
     }
 
@@ -564,13 +563,15 @@ function RunConsole({
         let tsSourceCode = transpileResult.outputText
 
         // Bundle transpiled TypeScript if it has import/require
+        // Use .js extension so esbuild doesn't try to re-parse JS as TS
         if (hasModuleSyntax(tsSourceCode) && projectFiles.length > 1 && activeFilePath) {
           appendLine('info', 'Bundling modules...')
+          const jsEntryPath = activeFilePath.replace(/\.tsx?$/i, '.js')
           const bundled = await bundleProjectFiles(
             projectFiles.map((f) =>
-              f.path === activeFilePath ? { ...f, content: tsSourceCode } : f,
+              f.path === activeFilePath ? { ...f, path: jsEntryPath, content: tsSourceCode } : f,
             ),
-            activeFilePath,
+            jsEntryPath,
           )
           if (!bundled.ok) {
             replaceOutput(
