@@ -14,7 +14,7 @@ function Editor({
 }) {
   const editorLanguage = language || detectLanguage(projectDescription, value)
   const editorHeightStyle = height ? { height } : undefined
-  const editorHeightClass = height ? 'h-full' : 'h-[22rem] sm:h-[24rem] md:h-[28rem] lg:h-[32rem]'
+  const editorHeightClass = height ? '' : 'h-[22rem] sm:h-[24rem] md:h-[28rem] lg:h-[32rem]'
 
   const sectionClass = height
     ? 'flex min-h-0 flex-1 flex-col overflow-hidden border border-slate-700 bg-[#1E1E1E]'
@@ -23,7 +23,7 @@ function Editor({
   return (
     <section className={sectionClass}>
       {tabs.length > 0 ? (
-        <div className="flex overflow-auto border-b border-slate-300 bg-slate-100" role="tablist">
+        <div className="flex shrink-0 overflow-auto border-b border-slate-300 bg-slate-100" role="tablist">
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -57,6 +57,8 @@ function Editor({
             scrollBeyondLastLine: false,
             lineNumbersMinChars: 3,
             automaticLayout: true,
+            padding: { top: 0, bottom: 0 },
+            stickyScroll: { enabled: false },
             scrollbar: {
               alwaysConsumeMouseWheel: false,
             },
