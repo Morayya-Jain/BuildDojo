@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 import laptopImage from '../assets/landing-laptop.png'
 import logo from '../assets/dojobuild-logo-riya.png'
-import './LandingPage.css'
 
 function ArrowRightIcon() {
   return (
@@ -65,13 +64,22 @@ function LandingPage({ onGetStarted = () => {} }) {
     section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
+  const scrollToHowItWorks = useCallback(() => {
+    if (typeof document === 'undefined') {
+      return
+    }
+
+    const section = document.getElementById('landing-how-it-works')
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
   return (
-    <main className="landing-page min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200/90 bg-white/90 px-4 py-4 backdrop-blur-sm sm:px-6 md:px-8">
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 px-4 py-4 backdrop-blur-sm sm:px-6 md:px-8">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <img src={logo} alt="BuildDojo logo" className="h-8 w-8 rounded-md object-cover" />
-            <p className="text-lg font-semibold text-slate-900 md:text-xl">BuildDojo</p>
+            <img src={logo} alt="BuildDojo logo" className="h-10 w-10 rounded-md object-cover" />
+            <span className="text-lg font-semibold text-slate-900 md:text-xl">BuildDojo</span>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
@@ -80,7 +88,7 @@ function LandingPage({ onGetStarted = () => {} }) {
               className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
               onClick={scrollToFeatures}
             >
-              Dashboard
+              Features
             </button>
             <button
               type="button"
@@ -93,32 +101,12 @@ function LandingPage({ onGetStarted = () => {} }) {
         </div>
       </header>
 
-      <section className="relative overflow-hidden px-4 py-16 sm:px-6 md:px-8 md:py-24">
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-20">
-          <svg
-            width="1920"
-            height="600"
-            viewBox="0 0 1920 600"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="min-w-[1200px]"
-          >
-            <path
-              d="M0 300C320 150 640 450 960 300C1280 150 1600 450 1920 300V600H0V300Z"
-              fill="#86efac"
-            />
-            <path
-              d="M0 350C320 200 640 500 960 350C1280 200 1600 500 1920 350V600H0V350Z"
-              fill="#bbf7d0"
-            />
-          </svg>
-        </div>
-
-        <div className="relative z-10 mx-auto max-w-7xl">
+      <section className="px-4 py-16 sm:px-6 md:px-8 md:py-24">
+        <div className="mx-auto max-w-7xl">
           <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)] lg:gap-12">
             <div className="max-w-2xl">
               <p className="inline-flex items-center rounded-full border border-green-200 bg-white px-4 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-green-700 shadow-sm">
-                AI Mentor for Real Builders
+                AI-Powered Coding Mentor
               </p>
               <h1 className="mt-5 text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl md:text-6xl">
                 Learn to Build with AI Guidance
@@ -140,21 +128,24 @@ function LandingPage({ onGetStarted = () => {} }) {
                 <button
                   type="button"
                   className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-900 transition hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-                  onClick={scrollToFeatures}
+                  onClick={scrollToHowItWorks}
                 >
                   See How It Works
                 </button>
               </div>
 
-              <p className="mt-5 text-sm text-slate-600">Your mentor, not your engineer.</p>
+              <p className="mt-5 text-base font-medium text-slate-500">Your mentor, not your engineer.</p>
             </div>
 
             <div className="w-full">
-              <div className="landing-image-shell mx-auto max-w-2xl rounded-[2rem] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/10 transition duration-300 hover:-translate-y-0.5">
+              <div className="mx-auto max-w-2xl rounded-[2rem] border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/10 transition duration-300 hover:-translate-y-0.5">
                 <img
                   src={laptopImage}
                   alt="BuildDojo platform interface"
                   className="w-full rounded-[1.4rem] border border-slate-100"
+                  decoding="async"
+                  width={3375}
+                  height={3375}
                 />
               </div>
             </div>
@@ -181,7 +172,7 @@ function LandingPage({ onGetStarted = () => {} }) {
           </div>
 
           <div className="mt-10 grid grid-cols-1 gap-5 md:mt-14 md:grid-cols-3 md:gap-7">
-            <article className="group rounded-3xl border border-slate-200 bg-white p-8 text-left shadow-[0_20px_35px_-30px_rgba(15,23,42,0.55)] transition duration-300 hover:-translate-y-1 hover:border-green-200">
+            <article className="group rounded-3xl border border-slate-200 bg-white p-8 text-left shadow-[0_8px_24px_-12px_rgba(15,23,42,0.15)] transition duration-300 hover:-translate-y-1 hover:border-green-200">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-green-200 bg-green-50 text-green-700 transition duration-300 group-hover:bg-green-100">
                 <TargetIcon />
               </div>
@@ -191,7 +182,7 @@ function LandingPage({ onGetStarted = () => {} }) {
               </p>
             </article>
 
-            <article className="group rounded-3xl border border-slate-200 bg-white p-8 text-left shadow-[0_20px_35px_-30px_rgba(15,23,42,0.55)] transition duration-300 hover:-translate-y-1 hover:border-green-200">
+            <article className="group rounded-3xl border border-slate-200 bg-white p-8 text-left shadow-[0_8px_24px_-12px_rgba(15,23,42,0.15)] transition duration-300 hover:-translate-y-1 hover:border-green-200">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-green-200 bg-green-50 text-green-700 transition duration-300 group-hover:bg-green-100">
                 <SparklesIcon />
               </div>
@@ -201,7 +192,7 @@ function LandingPage({ onGetStarted = () => {} }) {
               </p>
             </article>
 
-            <article className="group rounded-3xl border border-slate-200 bg-white p-8 text-left shadow-[0_20px_35px_-30px_rgba(15,23,42,0.55)] transition duration-300 hover:-translate-y-1 hover:border-green-200">
+            <article className="group rounded-3xl border border-slate-200 bg-white p-8 text-left shadow-[0_8px_24px_-12px_rgba(15,23,42,0.15)] transition duration-300 hover:-translate-y-1 hover:border-green-200">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-green-200 bg-green-50 text-green-700 transition duration-300 group-hover:bg-green-100">
                 <BookIcon />
               </div>
@@ -214,17 +205,65 @@ function LandingPage({ onGetStarted = () => {} }) {
         </div>
       </section>
 
+      <section id="landing-how-it-works" className="px-4 py-16 sm:px-6 md:px-8 md:py-24">
+        <div className="mx-auto max-w-5xl">
+          <div className="text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700">
+              How It Works
+            </p>
+            <h2 className="mt-3 text-3xl font-bold text-slate-900 md:text-4xl">
+              Three steps to building real skills
+            </h2>
+          </div>
+
+          <div className="mt-10 grid grid-cols-1 gap-8 md:grid-cols-3">
+            <div className="flex flex-col items-center text-center md:items-start md:text-left">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-50 text-sm font-bold text-green-700">
+                1
+              </div>
+              <h3 className="mt-4 text-lg font-semibold text-slate-900">Describe Your Project</h3>
+              <p className="mt-2 leading-relaxed text-slate-600">
+                Tell BuildDojo what you want to build and your skill level. The AI generates a
+                focused, step-by-step roadmap tailored to you.
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center text-center md:items-start md:text-left">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-50 text-sm font-bold text-green-700">
+                2
+              </div>
+              <h3 className="mt-4 text-lg font-semibold text-slate-900">Follow Guided Tasks</h3>
+              <p className="mt-2 leading-relaxed text-slate-600">
+                Work through each milestone with an AI mentor that gives hints and guiding
+                questions — never the full answer.
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center text-center md:items-start md:text-left">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-50 text-sm font-bold text-green-700">
+                3
+              </div>
+              <h3 className="mt-4 text-lg font-semibold text-slate-900">Build, Learn, Ship</h3>
+              <p className="mt-2 leading-relaxed text-slate-600">
+                Write real code in the built-in editor, understand every decision you make, and
+                ship a project you actually built yourself.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="px-4 py-16 text-center sm:px-6 md:px-8 md:py-24">
-        <div className="landing-cta-card mx-auto max-w-4xl rounded-[2rem] border border-slate-200 bg-white px-6 py-12 shadow-[0_24px_45px_-38px_rgba(15,23,42,0.65)] sm:px-10">
+        <div className="mx-auto max-w-4xl rounded-[2rem] border border-slate-200 bg-white px-6 py-12 shadow-[0_8px_30px_-12px_rgba(15,23,42,0.12)] sm:px-10">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-green-700">
             Build with Confidence
           </p>
           <h2 className="mt-3 text-3xl font-bold text-slate-900 md:text-4xl">
-            Ready to start building?
+            Start your first project in minutes
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-slate-700 md:text-xl">
-            Join BuildDojo and progress one intentional step at a time with AI guidance designed
-            to teach, not replace, your process.
+            Describe what you want to build, and BuildDojo breaks it into guided tasks with AI
+            coaching at every step. Free to get started.
           </p>
           <button
             type="button"
