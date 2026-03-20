@@ -13,8 +13,12 @@ function Editor({
   height,
 }) {
   const editorLanguage = language || detectLanguage(projectDescription, value)
-  const editorHeightStyle = height ? { height } : undefined
-  const editorHeightClass = height ? 'h-full' : 'h-[22rem] sm:h-[24rem] md:h-[28rem] lg:h-[32rem]'
+  const editorHeightStyle = (height && height !== '100%') ? { height } : undefined
+  const editorHeightClass = height === '100%'
+    ? 'min-h-0 flex-1'
+    : height
+      ? ''
+      : 'h-[22rem] sm:h-[24rem] md:h-[28rem] lg:h-[32rem]'
 
   const sectionClass = height
     ? 'flex min-h-0 flex-1 flex-col overflow-hidden border border-slate-700 bg-[#1E1E1E]'
@@ -50,6 +54,9 @@ function Editor({
           theme="vs-dark"
           value={value ?? ''}
           onChange={(newValue) => onChange(newValue || '')}
+          onMount={(editor) => {
+            requestAnimationFrame(() => editor.layout())
+          }}
           options={{
             readOnly,
             minimap: { enabled: false },
